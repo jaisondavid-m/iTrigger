@@ -39,3 +39,17 @@ docker run -d --name itrigger --env-file .env -p 8080:8080 itrigger
 ```bash
 docker run -d --name itrigger -e GITHUB_WEBHOOK_SECRET=your-secret -p 8080:8080 itrigger
 ```
+
+### Docker Compose
+
+1. **Start the server in background (builds automatically if needed):**
+
+```bash
+docker compose up --build -d
+```
+
+2. **Stop and remove the container:**
+
+```bash
+docker compose down
+```
