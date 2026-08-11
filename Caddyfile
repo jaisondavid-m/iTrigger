@@ -1,7 +1,4 @@
-:80 {
-    reverse_proxy server:8080
-}
+itrigger.bitsathy.in {
 
-{$DOMAIN_NAME:localhost} {
-    reverse_proxy server:8080
+    reverse_proxy localhost:8080
 }
