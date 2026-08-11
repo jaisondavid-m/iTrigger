@@ -1,0 +1,47 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go build output
+/bin/
+/build/
+*.out
+
+# Go test / coverage
+coverage.out
+coverage.html
+
+# Dependency/vendor directory
+/vendor/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Local configuration
+config.local.json
+
+# Deployment artifacts
+/deployments/
