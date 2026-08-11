@@ -14,5 +14,28 @@ GITHUB_WEBHOOK_SECRET=your-secret
 
 ## Run
 
+### Local (Go)
+
 ```bash
 go run ./cmd/server
+```
+
+### Docker
+
+1. **Build the Docker Image:**
+
+```bash
+docker build -t itrigger .
+```
+
+2. **Run with `.env` file:**
+
+```bash
+docker run -d --name itrigger --env-file .env -p 8080:8080 itrigger
+```
+
+3. **Or Run with inline secret:**
+
+```bash
+docker run -d --name itrigger -e GITHUB_WEBHOOK_SECRET=your-secret -p 8080:8080 itrigger
+```
