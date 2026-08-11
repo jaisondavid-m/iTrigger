@@ -11,6 +11,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"iTrigger/internal/models"
 )
 
 const githubSignaturePrefix = "sha256="
@@ -18,36 +20,6 @@ const githubSignaturePrefix = "sha256="
 type Handler struct {
 	secret []byte
 	logger *log.Logger
-}
-
-type pushPayload struct {
-	Repository struct {
-		Name     string `json:"name"`
-		FullName string `json:"full_name"`
-	} `json:"repository"`
-	Sender struct {
-		Login string `json:"login"`
-	} `json:"sender"`
-	Ref        string `json:"ref"`
-	HeadCommit struct {
-		ID      string `json:"id"`
-		Message string `json:"message"`
-	} `json:"head_commit"`
-}
-
-type pullRequestPayload struct {
-	Action     string `json:"action"`
-	Repository struct {
-		Name     string `json:"name"`
-		FullName string `json:"full_name"`
-	} `json:"repository"`
-	PullRequest struct {
-		Number int    `json:"number"`
-		Title  string `json:"title"`
-	} `json:"pull_request"`
-	Sender struct {
-		Login string `json:"login"`
-	} `json:"sender"`
 }
 
 func New(secret string) *Handler {
@@ -90,7 +62,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch eventType {
 	case "push":
-		var payload pushPayload
+		var payload models.PushPayload
 		if err := json.Unmarshal(body, &payload); err != nil {
 			h.writeError(w, http.StatusBadRequest, "invalid push payload")
 			return
@@ -111,7 +83,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "received"})
 	case "pull_request":
-		var payload pullRequestPayload
+		var payload models.PullRequestPayload
 		if err := json.Unmarshal(body, &payload); err != nil {
 			h.writeError(w, http.StatusBadRequest, "invalid pull_request payload")
 			return
