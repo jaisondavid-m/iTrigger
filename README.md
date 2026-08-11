@@ -40,15 +40,23 @@ docker run -d --name itrigger --env-file .env -p 8080:8080 itrigger
 docker run -d --name itrigger -e GITHUB_WEBHOOK_SECRET=your-secret -p 8080:8080 itrigger
 ```
 
-### Docker Compose
+### Docker Compose (with Automatic HTTPS via Caddy)
 
-1. **Start the server in background (builds automatically if needed):**
+1. **Configure environment variables in `.env`:**
+
+```env
+GITHUB_WEBHOOK_SECRET=your-secret
+DOMAIN_NAME=yourdomain.com
+```
+*(Leave `DOMAIN_NAME` unset or as `localhost` for local testing with self-signed SSL)*.
+
+2. **Start the server & reverse proxy:**
 
 ```bash
 docker compose up --build -d
 ```
 
-2. **Stop and remove the container:**
+3. **Stop and remove containers:**
 
 ```bash
 docker compose down

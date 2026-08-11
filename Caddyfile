@@ -1,0 +1,7 @@
+:80 {
+    reverse_proxy server:8080
+}
+
+{$DOMAIN_NAME:localhost} {
+    reverse_proxy server:8080
+}

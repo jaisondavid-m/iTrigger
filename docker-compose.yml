@@ -17,3 +17,24 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+  caddy:
+    image: caddy:latest
+    container_name: itrigger-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+
+volumes:
+  caddy_data:
+  caddy_config:
