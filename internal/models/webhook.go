@@ -43,3 +43,16 @@ type PullRequestPayload struct {
 type HealthResponse struct {
 	Status string `json:"status"`
 }
+
+// WebhookEventSummary represents the extracted payload details for UI display.
+type WebhookEventSummary struct {
+	DeliveryID     string `json:"deliveryID"`
+	EventType      string `json:"eventType"`
+	RepositoryName string `json:"repositoryName"`
+	Action         string `json:"action"`
+	PRNumber       int    `json:"prNumber"`
+	PRTitle        string `json:"prTitle"`
+	Sender         string `json:"sender"`
+	ReceivedAt     string `json:"receivedAt"`
+}
+

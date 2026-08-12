@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"iTrigger/internal/models"
 )
@@ -20,13 +21,22 @@ const githubSignaturePrefix = "sha256="
 type Handler struct {
 	secret []byte
 	logger *log.Logger
+	store  *Store
 }
 
-func New(secret string) *Handler {
+func New(secret string, store *Store) *Handler {
+	if store == nil {
+		store = NewStore()
+	}
 	return &Handler{
 		secret: []byte(secret),
 		logger: log.Default(),
+		store:  store,
 	}
+}
+
+func (h *Handler) Store() *Store {
+	return h.store
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,54 +70,115 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	summary := extractSummary(deliveryID, eventType, body)
+
 	switch eventType {
 	case "push":
 		var payload models.PushPayload
-		if err := json.Unmarshal(body, &payload); err != nil {
-			h.writeError(w, http.StatusBadRequest, "invalid push payload")
-			return
+		if err := json.Unmarshal(body, &payload); err == nil {
+			branch := branchFromRef(payload.Ref)
+			h.logger.Printf(
+				"GitHub webhook received delivery=%s event=%s repository=%s ref=%s branch=%s sender=%s sha=%s message=%q",
+				deliveryID,
+				eventType,
+				summary.RepositoryName,
+				payload.Ref,
+				branch,
+				summary.Sender,
+				payload.HeadCommit.ID,
+				payload.HeadCommit.Message,
+			)
 		}
-
-		repositoryName := firstNonEmpty(payload.Repository.FullName, payload.Repository.Name)
-		branch := branchFromRef(payload.Ref)
-		h.logger.Printf(
-			"GitHub webhook received delivery=%s event=%s repository=%s ref=%s branch=%s sender=%s sha=%s message=%q",
-			deliveryID,
-			eventType,
-			repositoryName,
-			payload.Ref,
-			branch,
-			payload.Sender.Login,
-			payload.HeadCommit.ID,
-			payload.HeadCommit.Message,
-		)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "received"})
 	case "pull_request":
 		var payload models.PullRequestPayload
-		if err := json.Unmarshal(body, &payload); err != nil {
-			h.writeError(w, http.StatusBadRequest, "invalid pull_request payload")
-			return
+		if err := json.Unmarshal(body, &payload); err == nil {
+			h.logger.Printf(
+				"GitHub webhook received delivery=%s event=%s repository=%s action=%s pull_request_number=%d title=%q sender=%s",
+				deliveryID,
+				eventType,
+				summary.RepositoryName,
+				summary.Action,
+				summary.PRNumber,
+				summary.PRTitle,
+				summary.Sender,
+			)
 		}
-
-		repositoryName := firstNonEmpty(payload.Repository.FullName, payload.Repository.Name)
-		h.logger.Printf(
-			"GitHub webhook received delivery=%s event=%s repository=%s action=%s pull_request_number=%d title=%q sender=%s",
-			deliveryID,
-			eventType,
-			repositoryName,
-			payload.Action,
-			payload.PullRequest.Number,
-			payload.PullRequest.Title,
-			payload.Sender.Login,
-		)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "received"})
-	case "ping":
-		h.logger.Printf("GitHub webhook received delivery=%s event=%s", deliveryID, eventType)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "received"})
 	default:
 		h.logger.Printf("GitHub webhook received delivery=%s event=%s", deliveryID, eventType)
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
 	}
+
+	if h.store != nil {
+		h.store.Add(summary)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "received"})
+}
+
+func (h *Handler) GetEventsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		h.writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	events := h.store.GetAll()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "success",
+		"count":  len(events),
+		"events": events,
+	})
+}
+
+func (h *Handler) ClearEventsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		h.writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	h.store.Clear()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+
+func extractSummary(deliveryID, eventType string, body []byte) models.WebhookEventSummary {
+	summary := models.WebhookEventSummary{
+		DeliveryID: deliveryID,
+		EventType:  eventType,
+		ReceivedAt: time.Now().Format(time.RFC3339),
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err == nil {
+		// Repository Name
+		if repoRaw, ok := raw["repository"].(map[string]any); ok {
+			if fullName, ok := repoRaw["full_name"].(string); ok && fullName != "" {
+				summary.RepositoryName = fullName
+			} else if name, ok := repoRaw["name"].(string); ok {
+				summary.RepositoryName = name
+			}
+		}
+
+		// Action
+		if action, ok := raw["action"].(string); ok {
+			summary.Action = action
+		}
+
+		// Sender Login
+		if senderRaw, ok := raw["sender"].(map[string]any); ok {
+			if login, ok := senderRaw["login"].(string); ok {
+				summary.Sender = login
+			}
+		}
+
+		// Pull Request details
+		if prRaw, ok := raw["pull_request"].(map[string]any); ok {
+			if num, ok := prRaw["number"].(float64); ok {
+				summary.PRNumber = int(num)
+			}
+			if title, ok := prRaw["title"].(string); ok {
+				summary.PRTitle = title
+			}
+		}
+	}
+
+	return summary
 }
 
 func verifySignature(secret, body []byte, signature string) bool {

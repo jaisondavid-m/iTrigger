@@ -1,12 +1,18 @@
 package server
 
 import (
+	"embed"
 	"encoding/json"
+	"io/fs"
+	"log"
 	"net/http"
 
 	"iTrigger/internal/models"
 	"iTrigger/internal/webhook"
 )
+
+//go:embed web/*
+var webFS embed.FS
 
 type Server struct {
 	mux *http.ServeMux
@@ -14,10 +20,21 @@ type Server struct {
 
 func New(secret string) *Server {
 	mux := http.NewServeMux()
+	store := webhook.NewStore()
+	webhookHandler := webhook.New(secret, store)
 
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/healthz", healthHandler)
-	mux.Handle("/api/webhooks/github", webhook.New(secret))
+	mux.Handle("/api/webhooks/github", webhookHandler)
+	mux.HandleFunc("/api/webhooks", webhookHandler.GetEventsHandler)
+	mux.HandleFunc("/api/webhooks/clear", webhookHandler.ClearEventsHandler)
+
+
+	subFS, err := fs.Sub(webFS, "web")
+	if err != nil {
+		log.Fatalf("failed to sub embed filesystem: %v", err)
+	}
+	mux.Handle("/", http.FileServer(http.FS(subFS)))
 
 	return &Server{
 		mux: mux,
@@ -41,3 +58,4 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Start(addr string) error {
 	return http.ListenAndServe(addr, s.mux)
 }
+
