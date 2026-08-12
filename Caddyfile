@@ -1,3 +1,8 @@
 itrigger.bitsathy.in {
+
+    log {
+        output stdout
+    }
+
     reverse_proxy server:8080
 }
