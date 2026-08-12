@@ -1,8 +1,3 @@
 hemanth.hackclub.app {
-
-    log {
-        output stdout
-    }
-
     reverse_proxy itrigger-server:8080
 }
