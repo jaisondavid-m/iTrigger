@@ -1,10 +1,8 @@
 package store
 
 import (
-	"encoding/json"
+	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -13,92 +11,46 @@ import (
 )
 
 type ProjectStore struct {
-	mu       sync.RWMutex
-	filePath string
-	projects map[string]models.ProjectConfig
+	mu sync.RWMutex
+	db *sql.DB
 }
 
-func NewProjectStore(filePath string) (*ProjectStore, error) {
-	if filePath == "" {
-		filePath = filepath.Join("data", "projects.json")
+func NewProjectStore(db *sql.DB) *ProjectStore {
+	return &ProjectStore{
+		db: db,
 	}
-
-	ps := &ProjectStore{
-		filePath: filePath,
-		projects: make(map[string]models.ProjectConfig),
-	}
-
-	if err := ps.load(); err != nil {
-		return nil, fmt.Errorf("failed to load projects: %w", err)
-	}
-
-	return ps, nil
-}
-
-func (ps *ProjectStore) load() error {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
-
-	if err := os.MkdirAll(filepath.Dir(ps.filePath), 0755); err != nil {
-		return err
-	}
-
-	data, err := os.ReadFile(ps.filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Save empty file
-			return ps.saveLocked()
-		}
-		return err
-	}
-
-	if len(data) == 0 {
-		return nil
-	}
-
-	var list []models.ProjectConfig
-	if err := json.Unmarshal(data, &list); err != nil {
-		return err
-	}
-
-	for _, p := range list {
-		ps.projects[p.ID] = p
-	}
-
-	return nil
-}
-
-func (ps *ProjectStore) saveLocked() error {
-	list := make([]models.ProjectConfig, 0, len(ps.projects))
-	for _, p := range ps.projects {
-		list = append(list, p)
-	}
-
-	data, err := json.MarshalIndent(list, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(ps.filePath, data, 0644)
 }
 
 func (ps *ProjectStore) GetAll() []models.ProjectConfig {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
-	result := make([]models.ProjectConfig, 0, len(ps.projects))
-	for _, p := range ps.projects {
-		result = append(result, p)
+	rows, err := ps.db.Query(`
+		SELECT id, name, repository, branch, project_path, script, secret, enabled, created_at, updated_at
+		FROM projects
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return []models.ProjectConfig{}
 	}
-	return result
+	defer rows.Close()
+
+	var projects []models.ProjectConfig
+	for rows.Next() {
+		var p models.ProjectConfig
+		var enabledInt int
+		if err := rows.Scan(&p.ID, &p.Name, &p.Repository, &p.Branch, &p.ProjectPath, &p.Script, &p.Secret, &enabledInt, &p.CreatedAt, &p.UpdatedAt); err == nil {
+			p.Enabled = (enabledInt == 1)
+			projects = append(projects, p)
+		}
+	}
+	return projects
 }
 
 func (ps *ProjectStore) Get(id string) (models.ProjectConfig, bool) {
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
-
-	p, ok := ps.projects[id]
-	return p, ok
+	return ps.getLocked(id)
 }
 
 func (ps *ProjectStore) Save(req models.CreateProjectRequest, existingID string) (models.ProjectConfig, error) {
@@ -109,7 +61,7 @@ func (ps *ProjectStore) Save(req models.CreateProjectRequest, existingID string)
 	var p models.ProjectConfig
 
 	if existingID != "" {
-		existing, ok := ps.projects[existingID]
+		existing, ok := ps.getLocked(existingID)
 		if !ok {
 			return models.ProjectConfig{}, fmt.Errorf("project not found: %s", existingID)
 		}
@@ -135,37 +87,59 @@ func (ps *ProjectStore) Save(req models.CreateProjectRequest, existingID string)
 		p.Branch = "main"
 	}
 
-	ps.projects[p.ID] = p
+	enabledInt := 0
+	if p.Enabled {
+		enabledInt = 1
+	}
 
-	if err := ps.saveLocked(); err != nil {
-		return models.ProjectConfig{}, err
+	_, err := ps.db.Exec(`
+		INSERT OR REPLACE INTO projects (id, name, repository, branch, project_path, script, secret, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, p.ID, p.Name, p.Repository, p.Branch, p.ProjectPath, p.Script, p.Secret, enabledInt, p.CreatedAt, p.UpdatedAt)
+
+	if err != nil {
+		return models.ProjectConfig{}, fmt.Errorf("failed to save project to db: %w", err)
 	}
 
 	return p, nil
+}
+
+func (ps *ProjectStore) getLocked(id string) (models.ProjectConfig, bool) {
+	var p models.ProjectConfig
+	var enabledInt int
+	err := ps.db.QueryRow(`
+		SELECT id, name, repository, branch, project_path, script, secret, enabled, created_at, updated_at
+		FROM projects WHERE id = ?
+	`, id).Scan(&p.ID, &p.Name, &p.Repository, &p.Branch, &p.ProjectPath, &p.Script, &p.Secret, &enabledInt, &p.CreatedAt, &p.UpdatedAt)
+
+	if err != nil {
+		return models.ProjectConfig{}, false
+	}
+
+	p.Enabled = (enabledInt == 1)
+	return p, true
 }
 
 func (ps *ProjectStore) Delete(id string) bool {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
-	if _, ok := ps.projects[id]; !ok {
+	res, err := ps.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
+	if err != nil {
 		return false
 	}
-
-	delete(ps.projects, id)
-	_ = ps.saveLocked()
-	return true
+	rowsAffected, _ := res.RowsAffected()
+	return rowsAffected > 0
 }
 
 func (ps *ProjectStore) FindByRepoAndBranch(repo, branch string) []models.ProjectConfig {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
+	allProjects := ps.GetAll()
 
 	repoClean := strings.ToLower(strings.TrimSpace(repo))
 	branchClean := strings.TrimPrefix(strings.TrimSpace(branch), "refs/heads/")
 
 	var matches []models.ProjectConfig
-	for _, p := range ps.projects {
+	for _, p := range allProjects {
 		if !p.Enabled {
 			continue
 		}
@@ -173,7 +147,6 @@ func (ps *ProjectStore) FindByRepoAndBranch(repo, branch string) []models.Projec
 		pRepo := strings.ToLower(strings.TrimSpace(p.Repository))
 		pBranch := strings.TrimPrefix(strings.TrimSpace(p.Branch), "refs/heads/")
 
-		// Match repo name either exact match or trailing repo name (e.g. "owner/repo" or "repo")
 		repoMatch := pRepo == repoClean || strings.HasSuffix(repoClean, "/"+pRepo) || strings.HasSuffix(pRepo, "/"+repoClean)
 		branchMatch := pBranch == "" || pBranch == branchClean
 

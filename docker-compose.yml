@@ -8,6 +8,8 @@ services:
       - "8080"
     env_file:
       - .env
+    volumes:
+      - ./data:/app/data
     restart: unless-stopped
 
     healthcheck:
@@ -19,7 +21,6 @@ services:
 
     networks:
       - web
-
 
 networks:
   web:

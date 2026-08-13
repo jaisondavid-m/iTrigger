@@ -36,6 +36,14 @@ Thumbs.db
 *.log
 /logs/
 
+# Data Directory (SQLite & Deployments)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/deployments/
+data/backups/
+data/*.migrated
+
 # Temporary files
 *.tmp
 *.temp

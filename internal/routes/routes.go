@@ -2,11 +2,14 @@ package routes
 
 import (
 	"encoding/json"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
 	"strings"
 
+	"iTrigger/internal/backup"
+	"iTrigger/internal/db"
 	"iTrigger/internal/deployer"
 	"iTrigger/internal/models"
 	"iTrigger/internal/store"
@@ -15,17 +18,16 @@ import (
 
 // Register declares and maps all application HTTP routes onto the provided ServeMux.
 func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
-	// Initialize stores
-	webhookStore := webhook.NewStore()
-	projectStore, err := store.NewProjectStore("data/projects.json")
+	// Initialize SQLite Database
+	database, err := db.InitDB("data/itrigger.db")
 	if err != nil {
-		log.Fatalf("failed to initialize project store: %v", err)
+		log.Fatalf("failed to initialize SQLite database: %v", err)
 	}
 
-	deploymentStore, err := store.NewDeploymentStore("data/deployments.json")
-	if err != nil {
-		log.Fatalf("failed to initialize deployment store: %v", err)
-	}
+	// Initialize stores using SQLite DB
+	webhookStore := webhook.NewStore()
+	projectStore := store.NewProjectStore(database)
+	deploymentStore := store.NewDeploymentStore(database)
 
 	runner := deployer.NewRunner(projectStore, deploymentStore)
 
@@ -40,6 +42,23 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 	mux.Handle("/api/webhooks/github", webhookHandler)
 	mux.HandleFunc("/api/webhooks", webhookHandler.GetEventsHandler)
 	mux.HandleFunc("/api/webhooks/clear", webhookHandler.ClearEventsHandler)
+
+	// Backup endpoint
+	mux.HandleFunc("/api/backups", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		backupPath, err := backup.CreateBackup("data")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"status": "success",
+			"path":   backupPath,
+		})
+	})
 
 	// Project Management API endpoints
 	mux.HandleFunc("/api/projects", func(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +177,28 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		depID := strings.TrimPrefix(r.URL.Path, "/api/deployments/")
+
+		subPath := strings.TrimPrefix(r.URL.Path, "/api/deployments/")
+		parts := strings.Split(strings.Trim(subPath, "/"), "/")
+
+		// Handle /api/deployments/{id}/logs or /api/deployments/{id}/log
+		if len(parts) == 2 && (parts[1] == "logs" || parts[1] == "log") {
+			depID := parts[0]
+			reader, err := deploymentStore.GetLogStreamReader(depID)
+			if err != nil {
+				http.Error(w, "log file not found", http.StatusNotFound)
+				return
+			}
+			defer reader.Close()
+
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.Copy(w, reader)
+			return
+		}
+
+		// Handle /api/deployments/{id}
+		depID := parts[0]
 		depLog, ok := deploymentStore.Get(depID)
 		if !ok {
 			http.Error(w, "deployment log not found", http.StatusNotFound)

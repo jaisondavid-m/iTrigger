@@ -2,6 +2,8 @@ package deployer
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -26,9 +28,25 @@ func NewRunner(ps *store.ProjectStore, ds *store.DeploymentStore) *Runner {
 	}
 }
 
+func generateDeploymentID(commitSHA string) string {
+	now := time.Now()
+	dateStr := now.Format("20060102")
+
+	if len(commitSHA) >= 6 {
+		return fmt.Sprintf("%s-%s", dateStr, commitSHA[:6])
+	}
+
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%s-%s", dateStr, hex.EncodeToString(b))
+}
+
 func (r *Runner) TriggerDeployment(project models.ProjectConfig, triggeredBy, commitSHA, commitMsg string) *models.DeploymentLog {
+	depID := generateDeploymentID(commitSHA)
+	startTime := time.Now()
+
 	depLog := models.DeploymentLog{
-		ID:            fmt.Sprintf("dep_%d", time.Now().UnixNano()),
+		ID:            depID,
 		ProjectID:     project.ID,
 		ProjectName:   project.Name,
 		Repository:    project.Repository,
@@ -37,7 +55,7 @@ func (r *Runner) TriggerDeployment(project models.ProjectConfig, triggeredBy, co
 		CommitMessage: commitMsg,
 		TriggeredBy:   triggeredBy,
 		Status:        "RUNNING",
-		StartedAt:     time.Now(),
+		StartedAt:     startTime,
 		Log:           fmt.Sprintf("Starting deployment for project %q (%s)\nPath: %s\nTriggered by: %s\n----------------------------------------\n", project.Name, project.Repository, project.ProjectPath, triggeredBy),
 	}
 
