@@ -20,11 +20,11 @@ COPY . .
 # Build static binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
 
-# Stage 2: Final lightweight image
+# Stage 2: Final runtime image with deployment tools (git, docker-cli, docker-compose, bash)
 FROM alpine:latest
 
-# Install ca-certificates, mailcap (for MIME types), and tzdata
-RUN apk --no-cache add ca-certificates mailcap tzdata
+# Install ca-certificates, tzdata, git, docker-cli, docker-cli-compose, bash
+RUN apk --no-cache add ca-certificates mailcap tzdata git docker-cli docker-cli-compose bash
 
 WORKDIR /app
 
