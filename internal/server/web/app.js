@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let autoRefreshInterval = null;
   let isAutoRefreshOn = true;
 
-  // DOM Elements
+  // Header & Controls Elements
   const btnNewProject = document.getElementById('btnNewProject');
   const btnRefresh = document.getElementById('btnRefresh');
   const btnClear = document.getElementById('btnClear');
@@ -16,28 +16,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('searchInput');
   const eventFilter = document.getElementById('eventFilter');
 
-  // Tabs
+  // Navigation Tabs
+  const navTabs = document.getElementById('navTabs');
   const tabBtns = document.querySelectorAll('.tab-btn');
   const tabContents = document.querySelectorAll('.tab-content');
 
-  // Stats
+  // Stats Elements
   const statProjects = document.getElementById('statProjects');
+  const statProjectsTotal = document.getElementById('statProjectsTotal');
   const statDeployments = document.getElementById('statDeployments');
   const statSuccess = document.getElementById('statSuccess');
+  const statSuccessRate = document.getElementById('statSuccessRate');
   const statFailed = document.getElementById('statFailed');
   const badgeProjects = document.getElementById('badgeProjects');
   const badgeDeployments = document.getElementById('badgeDeployments');
   const badgeWebhooks = document.getElementById('badgeWebhooks');
 
-  // Projects View
+  // Containers
   const projectsGrid = document.getElementById('projectsGrid');
   const emptyProjects = document.getElementById('emptyProjects');
-
-  // Deployments View
   const deploymentsTbody = document.getElementById('deploymentsTbody');
   const emptyDeployments = document.getElementById('emptyDeployments');
-
-  // Webhooks View
   const payloadTbody = document.getElementById('payloadTbody');
   const emptyState = document.getElementById('emptyState');
 
@@ -66,46 +65,59 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setupEventListeners() {
-    // Tab Switching
-    tabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
+    // 1. Tab Switching
+    if (navTabs) {
+      navTabs.addEventListener('click', (e) => {
+        const btn = e.target.closest('.tab-btn');
+        if (!btn) return;
         const targetTab = btn.getAttribute('data-tab');
+        
         tabBtns.forEach(b => b.classList.remove('active'));
         tabContents.forEach(c => c.classList.remove('active'));
 
         btn.classList.add('active');
-        document.getElementById(targetTab).classList.add('active');
+        const contentEl = document.getElementById(targetTab);
+        if (contentEl) contentEl.classList.add('active');
       });
-    });
+    }
 
-    // Header buttons
+    // 2. Header Actions
     if (btnNewProject) {
       btnNewProject.addEventListener('click', () => openProjectModal());
     }
 
     if (btnRefresh) {
-      btnRefresh.addEventListener('click', () => fetchAllData());
+      btnRefresh.addEventListener('click', () => {
+        const icon = btnRefresh.querySelector('.refresh-icon');
+        if (icon) icon.classList.add('spin');
+        fetchAllData().finally(() => {
+          setTimeout(() => {
+            if (icon) icon.classList.remove('spin');
+          }, 600);
+        });
+      });
     }
 
     if (btnClear) {
       btnClear.addEventListener('click', clearWebhooks);
     }
 
-    // Auto-refresh toggle
-    autoRefreshToggle.addEventListener('change', (e) => {
-      isAutoRefreshOn = e.target.checked;
-      if (isAutoRefreshOn) {
-        liveDot.classList.remove('paused');
-        liveStatus.textContent = 'Auto-refresh On';
-        startAutoRefresh();
-      } else {
-        liveDot.classList.add('paused');
-        liveStatus.textContent = 'Paused';
-        stopAutoRefresh();
-      }
-    });
+    if (autoRefreshToggle) {
+      autoRefreshToggle.addEventListener('change', (e) => {
+        isAutoRefreshOn = e.target.checked;
+        if (isAutoRefreshOn) {
+          if (liveDot) liveDot.classList.remove('paused');
+          if (liveStatus) liveStatus.textContent = 'Auto-refresh On';
+          startAutoRefresh();
+        } else {
+          if (liveDot) liveDot.classList.add('paused');
+          if (liveStatus) liveStatus.textContent = 'Paused';
+          stopAutoRefresh();
+        }
+      });
+    }
 
-    // Search and Filter
+    // 3. Search and Filter
     if (searchInput) {
       searchInput.addEventListener('input', renderWebhooks);
     }
@@ -113,28 +125,83 @@ document.addEventListener('DOMContentLoaded', () => {
       eventFilter.addEventListener('change', renderWebhooks);
     }
 
-    // Project Modal
+    // 4. EVENT DELEGATION: Projects Grid
+    if (projectsGrid) {
+      projectsGrid.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+
+        if (action === 'edit-project') {
+          editProject(id);
+        } else if (action === 'delete-project') {
+          deleteProject(id);
+        } else if (action === 'deploy-project') {
+          triggerDeploy(id, btn);
+        } else if (action === 'copy-path') {
+          copyText(btn.dataset.path || btn.textContent.trim());
+        }
+      });
+    }
+
+    // 5. EVENT DELEGATION: Deployment Logs Table
+    if (deploymentsTbody) {
+      deploymentsTbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+
+        if (action === 'view-log') {
+          openTerminalModal(id);
+        }
+      });
+    }
+
+    // 6. EVENT DELEGATION: Webhook Payloads Table
+    if (payloadTbody) {
+      payloadTbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-action]');
+        if (!btn) return;
+        const action = btn.dataset.action;
+
+        if (action === 'copy-id') {
+          copyText(btn.dataset.text || btn.textContent.trim());
+        }
+      });
+    }
+
+    // 7. Modals Listeners
     if (btnCloseProjectModal) btnCloseProjectModal.addEventListener('click', closeProjectModal);
     if (btnCancelProjectModal) btnCancelProjectModal.addEventListener('click', closeProjectModal);
     if (projectForm) projectForm.addEventListener('submit', saveProject);
 
-    // Terminal Modal
     if (btnCloseTerminalModal) btnCloseTerminalModal.addEventListener('click', closeTerminalModal);
     if (btnCopyLog) {
       btnCopyLog.addEventListener('click', () => {
-        navigator.clipboard.writeText(terminalContent.textContent);
-        showToast('Log copied to clipboard!');
+        if (terminalContent) {
+          navigator.clipboard.writeText(terminalContent.textContent);
+          showToast('Console output log copied to clipboard!');
+        }
       });
     }
 
-    // Close modals on overlay click
+    // Close modals on overlay click or Escape key
     window.addEventListener('click', (e) => {
       if (e.target === projectModal) closeProjectModal();
       if (e.target === terminalModal) closeTerminalModal();
     });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeProjectModal();
+        closeTerminalModal();
+      }
+    });
   }
 
-  // --- Auto-Refresh Interval ---
+  // --- Auto-Refresh ---
   function startAutoRefresh() {
     stopAutoRefresh();
     autoRefreshInterval = setInterval(() => {
@@ -198,100 +265,121 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // --- Rendering Projects ---
+  // --- Rendering Projects Grid ---
   function renderProjects() {
-    badgeProjects.textContent = projects.length;
+    if (badgeProjects) badgeProjects.textContent = projects.length;
     if (projects.length === 0) {
-      projectsGrid.innerHTML = '';
-      emptyProjects.classList.remove('hidden');
+      if (projectsGrid) projectsGrid.innerHTML = '';
+      if (emptyProjects) emptyProjects.classList.remove('hidden');
       return;
     }
 
-    emptyProjects.classList.add('hidden');
-    projectsGrid.innerHTML = projects.map(p => `
-      <div class="project-card">
-        <div class="project-card-header">
-          <div class="project-name-wrap">
-            <span class="project-name">${escapeHTML(p.name)}</span>
-            <span class="project-repo">${escapeHTML(p.repository)}</span>
+    if (emptyProjects) emptyProjects.classList.add('hidden');
+    if (projectsGrid) {
+      projectsGrid.innerHTML = projects.map(p => `
+        <div class="project-card" data-project-id="${escapeHTML(p.id)}">
+          <div class="project-card-header">
+            <div class="project-name-wrap">
+              <span class="project-name">${escapeHTML(p.name)}</span>
+              <span class="project-repo">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path>
+                </svg>
+                ${escapeHTML(p.repository)}
+              </span>
+            </div>
+            <span class="badge ${p.enabled ? 'badge-status-success' : 'badge-status-failed'}">
+              ${p.enabled ? 'Enabled' : 'Disabled'}
+            </span>
           </div>
-          <span class="badge ${p.enabled ? 'badge-status-success' : 'badge-status-failed'}">
-            ${p.enabled ? 'Enabled' : 'Disabled'}
-          </span>
+
+          <div class="project-details">
+            <div class="project-meta-row">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="6" y1="3" x2="6" y2="15"></line>
+                <circle cx="18" cy="6" r="3"></circle>
+                <circle cx="6" cy="18" r="3"></circle>
+                <path d="M18 9a9 9 0 0 1-9 9"></path>
+              </svg>
+              <span>Target Branch:</span>
+              <span class="branch-badge">${escapeHTML(p.branch)}</span>
+            </div>
+
+            <div class="project-meta-row">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span>Server Path:</span>
+              <span class="path-code" data-action="copy-path" data-path="${escapeHTML(p.projectPath)}" title="Click to copy path">${escapeHTML(p.projectPath)}</span>
+            </div>
+
+            <div class="script-box">${escapeHTML(p.script || '# No script provided')}</div>
+          </div>
+
+          <div class="project-card-footer">
+            <div class="project-actions">
+              <button type="button" class="btn btn-xs btn-secondary" data-action="edit-project" data-id="${escapeHTML(p.id)}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                Edit
+              </button>
+              <button type="button" class="btn btn-xs btn-danger-outline" data-action="delete-project" data-id="${escapeHTML(p.id)}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+                Delete
+              </button>
+            </div>
+            <button type="button" class="btn btn-xs btn-success-outline" data-action="deploy-project" data-id="${escapeHTML(p.id)}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Deploy Now</span>
+            </button>
+          </div>
         </div>
-
-        <div class="project-details">
-          <div class="project-meta-row">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="6" y1="3" x2="6" y2="15"></line>
-              <circle cx="18" cy="6" r="3"></circle>
-              <circle cx="6" cy="18" r="3"></circle>
-              <path d="M18 9a9 9 0 0 1-9 9"></path>
-            </svg>
-            <span>Target Branch:</span>
-            <span class="branch-badge">${escapeHTML(p.branch)}</span>
-          </div>
-
-          <div class="project-meta-row">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <span>Server Path:</span>
-            <span class="path-code">${escapeHTML(p.projectPath)}</span>
-          </div>
-
-          <div class="script-box">${escapeHTML(p.script || '# No script provided')}</div>
-        </div>
-
-        <div class="project-card-footer">
-          <div style="display:flex; gap:0.4rem;">
-            <button class="btn btn-xs btn-secondary" onclick="editProject('${p.id}')">Edit</button>
-            <button class="btn btn-xs btn-danger-outline" onclick="deleteProject('${p.id}')">Delete</button>
-          </div>
-          <button class="btn btn-xs btn-success-outline" onclick="triggerDeploy('${p.id}')">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="5 3 19 12 5 21 5 3"></polygon>
-            </svg>
-            Deploy Now
-          </button>
-        </div>
-      </div>
-    `).join('');
+      `).join('');
+    }
   }
 
   // --- Rendering Deployments ---
   function renderDeployments() {
-    badgeDeployments.textContent = deployments.length;
+    if (badgeDeployments) badgeDeployments.textContent = deployments.length;
     if (deployments.length === 0) {
-      deploymentsTbody.innerHTML = '';
-      emptyDeployments.classList.remove('hidden');
+      if (deploymentsTbody) deploymentsTbody.innerHTML = '';
+      if (emptyDeployments) emptyDeployments.classList.remove('hidden');
       return;
     }
 
-    emptyDeployments.classList.add('hidden');
-    deploymentsTbody.innerHTML = deployments.map(d => {
-      const statusClass = d.status === 'SUCCESS' ? 'badge-status-success' : (d.status === 'FAILED' ? 'badge-status-failed' : 'badge-status-running');
-      return `
-        <tr>
-          <td><span class="badge ${statusClass}">${d.status}</span></td>
-          <td style="font-weight:700; color:white;">${escapeHTML(d.projectName || d.projectId)}</td>
-          <td><span style="font-family:var(--font-mono); color:var(--accent-indigo);">${escapeHTML(d.repository)}</span></td>
-          <td><span class="branch-badge">${escapeHTML(d.branch)}</span></td>
-          <td><span class="sender-pill">${escapeHTML(d.triggeredBy || 'Manual')}</span></td>
-          <td><span style="font-family:var(--font-mono);">${formatDuration(d.durationMs)}</span></td>
-          <td><span class="time-stamp">${formatTime(d.startedAt)}</span></td>
-          <td>
-            <button class="btn btn-xs btn-secondary" onclick="openTerminalModal('${d.id}')">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="4 17 10 11 16 17 20 13"></polyline>
-                <line x1="4" y1="7" x2="20" y2="7"></line>
-              </svg>
-              View Log
-            </button>
-          </td>
-        </tr>
-      `;
-    }).join('');
+    if (emptyDeployments) emptyDeployments.classList.add('hidden');
+    if (deploymentsTbody) {
+      deploymentsTbody.innerHTML = deployments.map(d => {
+        const statusClass = d.status === 'SUCCESS' ? 'badge-status-success' : (d.status === 'FAILED' ? 'badge-status-failed' : 'badge-status-running');
+        return `
+          <tr>
+            <td><span class="badge ${statusClass}">${escapeHTML(d.status)}</span></td>
+            <td style="font-weight:700; color:white;">${escapeHTML(d.projectName || d.projectId)}</td>
+            <td><span style="font-family:var(--font-mono); color:var(--accent-indigo);">${escapeHTML(d.repository)}</span></td>
+            <td><span class="branch-badge">${escapeHTML(d.branch)}</span></td>
+            <td><span class="sender-pill">${escapeHTML(d.triggeredBy || 'Manual')}</span></td>
+            <td><span style="font-family:var(--font-mono);">${formatDuration(d.durationMs)}</span></td>
+            <td><span class="time-stamp">${formatTime(d.startedAt)}</span></td>
+            <td>
+              <button type="button" class="btn btn-xs btn-secondary" data-action="view-log" data-id="${escapeHTML(d.id)}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="4 17 10 11 16 17 20 13"></polyline>
+                  <line x1="4" y1="7" x2="20" y2="7"></line>
+                </svg>
+                View Log
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
   }
 
   // --- Rendering Webhook Payloads ---
@@ -311,55 +399,68 @@ document.addEventListener('DOMContentLoaded', () => {
       return matchesFilter && matchesSearch;
     });
 
-    badgeWebhooks.textContent = filtered.length;
+    if (badgeWebhooks) badgeWebhooks.textContent = filtered.length;
 
     if (filtered.length === 0) {
-      payloadTbody.innerHTML = '';
-      emptyState.classList.remove('hidden');
+      if (payloadTbody) payloadTbody.innerHTML = '';
+      if (emptyState) emptyState.classList.remove('hidden');
       return;
     }
 
-    emptyState.classList.add('hidden');
-    payloadTbody.innerHTML = filtered.map(ev => `
-      <tr>
-        <td>
-          <span class="delivery-id" onclick="copyText('${escapeHTML(ev.deliveryID)}')">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-            ${escapeHTML(ev.deliveryID)}
-          </span>
-        </td>
-        <td><span class="badge badge-event-${escapeHTML(ev.eventType)}">${escapeHTML(ev.eventType)}</span></td>
-        <td><span class="repo-name">${escapeHTML(ev.repositoryName || '-')}</span></td>
-        <td>${ev.action ? `<span class="badge badge-action badge-action-${escapeHTML(ev.action)}">${escapeHTML(ev.action)}</span>` : '<span class="null-dash">-</span>'}</td>
-        <td>${ev.prNumber ? `<span class="pr-number">#${ev.prNumber}</span>` : '<span class="null-dash">-</span>'}</td>
-        <td>${ev.prTitle ? `<div class="pr-title" title="${escapeHTML(ev.prTitle)}">${escapeHTML(ev.prTitle)}</div>` : '<span class="null-dash">-</span>'}</td>
-        <td>
-          <span class="sender-pill">
-            <span class="sender-avatar">${(ev.sender || 'U').charAt(0).toUpperCase()}</span>
-            ${escapeHTML(ev.sender || 'Unknown')}
-          </span>
-        </td>
-        <td><span class="time-stamp">${formatTime(ev.receivedAt)}</span></td>
-      </tr>
-    `).join('');
+    if (emptyState) emptyState.classList.add('hidden');
+    if (payloadTbody) {
+      payloadTbody.innerHTML = filtered.map(ev => `
+        <tr>
+          <td>
+            <span class="delivery-id" data-action="copy-id" data-text="${escapeHTML(ev.deliveryID)}" title="Click to copy delivery ID">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              ${escapeHTML(ev.deliveryID)}
+            </span>
+          </td>
+          <td><span class="badge badge-event-${escapeHTML(ev.eventType)}">${escapeHTML(ev.eventType)}</span></td>
+          <td><span style="font-family:var(--font-mono); color:var(--text-primary); font-weight:600;">${escapeHTML(ev.repositoryName || '-')}</span></td>
+          <td>${ev.action ? `<span class="badge badge-status-running">${escapeHTML(ev.action)}</span>` : '<span style="color:var(--text-muted);">-</span>'}</td>
+          <td>${ev.prNumber ? `<span class="branch-badge">#${ev.prNumber}</span>` : '<span style="color:var(--text-muted);">-</span>'}</td>
+          <td>${ev.prTitle ? `<div style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHTML(ev.prTitle)}">${escapeHTML(ev.prTitle)}</div>` : '<span style="color:var(--text-muted);">-</span>'}</td>
+          <td>
+            <span class="sender-pill">
+              <span class="sender-avatar">${(ev.sender || 'U').charAt(0).toUpperCase()}</span>
+              ${escapeHTML(ev.sender || 'Unknown')}
+            </span>
+          </td>
+          <td><span class="time-stamp">${formatTime(ev.receivedAt)}</span></td>
+        </tr>
+      `).join('');
+    }
   }
 
-  // --- Update Stats ---
+  // --- Update Stats Dashboard ---
   function updateStats() {
-    if (statProjects) statProjects.textContent = projects.filter(p => p.enabled).length;
+    const activeCount = projects.filter(p => p.enabled).length;
+    if (statProjects) statProjects.textContent = activeCount;
+    if (statProjectsTotal) statProjectsTotal.textContent = `of ${projects.length} configured`;
     if (statDeployments) statDeployments.textContent = deployments.length;
-    if (statSuccess) statSuccess.textContent = deployments.filter(d => d.status === 'SUCCESS').length;
-    if (statFailed) statFailed.textContent = deployments.filter(d => d.status === 'FAILED').length;
+
+    const successCount = deployments.filter(d => d.status === 'SUCCESS').length;
+    const failedCount = deployments.filter(d => d.status === 'FAILED').length;
+
+    if (statSuccess) statSuccess.textContent = successCount;
+    if (statFailed) statFailed.textContent = failedCount;
+
+    if (statSuccessRate) {
+      const rate = deployments.length > 0 ? Math.round((successCount / deployments.length) * 100) : 0;
+      statSuccessRate.textContent = `${rate}% success rate`;
+    }
   }
 
-  // --- Project Modal Actions ---
-  window.editProject = function(id) {
+  // --- Actions ---
+  function editProject(id) {
     const proj = projects.find(p => p.id === id);
     if (proj) openProjectModal(proj);
-  };
+  }
 
   function openProjectModal(proj = null) {
     document.getElementById('projectId').value = proj ? proj.id : '';
@@ -367,16 +468,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('projectRepo').value = proj ? proj.repository : '';
     document.getElementById('projectBranch').value = proj ? proj.branch : 'main';
     document.getElementById('projectPath').value = proj ? proj.projectPath : '';
-    document.getElementById('projectScript').value = proj ? proj.script : 'cd /my/project\ngit pull origin main\ndocker compose down\ndocker compose up --build -d';
+    document.getElementById('projectScript').value = proj ? proj.script : 'cd /path/to/project\ngit pull origin main\ndocker compose down\ndocker compose up --build -d';
     document.getElementById('projectEnabled').checked = proj ? proj.enabled : true;
 
-    modalProjectTitle.textContent = proj ? 'Edit Deployment Project' : 'Add Deployment Project';
-    projectModal.classList.remove('hidden');
+    if (modalProjectTitle) modalProjectTitle.textContent = proj ? 'Edit Deployment Project' : 'Add Deployment Project';
+    if (projectModal) projectModal.classList.remove('hidden');
   }
 
   function closeProjectModal() {
-    projectModal.classList.add('hidden');
-    projectForm.reset();
+    if (projectModal) projectModal.classList.add('hidden');
+    if (projectForm) projectForm.reset();
   }
 
   async function saveProject(e) {
@@ -390,6 +491,19 @@ document.addEventListener('DOMContentLoaded', () => {
       script: document.getElementById('projectScript').value,
       enabled: document.getElementById('projectEnabled').checked
     };
+
+    const saveBtn = document.getElementById('btnSaveProject');
+    const origHTML = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        Saving...
+      `;
+    }
 
     try {
       const url = id ? `/api/projects/${id}` : '/api/projects';
@@ -406,91 +520,115 @@ document.addEventListener('DOMContentLoaded', () => {
       fetchProjects();
     } catch (err) {
       showToast(err.message, true);
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = origHTML;
+      }
     }
   }
 
-  window.deleteProject = async function(id) {
+  async function deleteProject(id) {
     if (!confirm('Are you sure you want to delete this project deployment config?')) return;
     try {
       const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete project');
-      showToast('Project deleted');
+      showToast('Project deleted successfully');
       fetchProjects();
     } catch (err) {
       showToast(err.message, true);
     }
-  };
+  }
 
-  // --- Manual Deploy Trigger ---
-  window.triggerDeploy = async function(id) {
+  async function triggerDeploy(id, buttonEl = null) {
+    let origHTML = '';
+    if (buttonEl) {
+      origHTML = buttonEl.innerHTML;
+      buttonEl.disabled = true;
+      buttonEl.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        Deploying...
+      `;
+    }
+
     try {
-      showToast('Triggering deployment...');
+      showToast('Triggering manual deployment...');
       const res = await fetch(`/api/projects/${id}/deploy`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to trigger deployment');
       const data = await res.json();
-      showToast('Deployment launched!');
-      
+      showToast('Deployment launched successfully!');
+
       // Switch to Deployments tab
-      document.querySelector('[data-tab="deploymentsTab"]').click();
-      fetchDeployments();
+      const tabBtn = document.querySelector('[data-tab="deploymentsTab"]');
+      if (tabBtn) tabBtn.click();
+      
+      await fetchDeployments();
 
       if (data.deployment && data.deployment.id) {
-        setTimeout(() => openTerminalModal(data.deployment.id), 500);
+        setTimeout(() => openTerminalModal(data.deployment.id), 400);
       }
     } catch (err) {
       showToast(err.message, true);
+    } finally {
+      if (buttonEl) {
+        buttonEl.disabled = false;
+        buttonEl.innerHTML = origHTML;
+      }
     }
-  };
+  }
 
-  // --- Terminal Modal ---
-  window.openTerminalModal = async function(depId) {
-    terminalTitle.textContent = `Deployment Log: ${depId}`;
-    terminalContent.textContent = 'Loading execution log...';
-    terminalModal.classList.remove('hidden');
+  async function openTerminalModal(depId) {
+    if (terminalTitle) terminalTitle.textContent = `Deployment Log: ${depId}`;
+    if (terminalContent) terminalContent.textContent = 'Loading execution log output...';
+    if (terminalModal) terminalModal.classList.remove('hidden');
 
     try {
       const res = await fetch(`/api/deployments/${depId}`);
-      if (!res.ok) throw new Error('Log not found');
+      if (!res.ok) throw new Error('Log record not found');
       const data = await res.json();
       const dep = data.deployment;
-      terminalTitle.textContent = `Deployment Console — ${dep.projectName} (${dep.repository}:${dep.branch})`;
-      terminalContent.textContent = dep.log || 'No log output recorded.';
+      if (terminalTitle) terminalTitle.textContent = `Console Log — ${dep.projectName || dep.projectId} (${dep.repository}:${dep.branch})`;
+      if (terminalContent) terminalContent.textContent = dep.log || 'No log output recorded.';
     } catch (err) {
-      terminalContent.textContent = `Failed to load log: ${err.message}`;
+      if (terminalContent) terminalContent.textContent = `Failed to load execution log: ${err.message}`;
     }
-  };
-
-  function closeTerminalModal() {
-    terminalModal.classList.add('hidden');
   }
 
-  // --- Clear Webhooks ---
+  function closeTerminalModal() {
+    if (terminalModal) terminalModal.classList.add('hidden');
+  }
+
   async function clearWebhooks() {
-    if (!confirm('Clear all webhook history?')) return;
+    if (!confirm('Clear all recorded webhook payload history?')) return;
     try {
       const res = await fetch('/api/webhooks/clear', { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to clear webhooks');
-      showToast('Webhook history cleared');
+      showToast('Webhook history cleared successfully');
       fetchWebhooks();
     } catch (err) {
       showToast(err.message, true);
     }
   }
 
-  // --- Helpers ---
+  // --- Toast Helpers ---
   function showToast(msg, isError = false) {
+    if (!toast) return;
     toast.textContent = msg;
     toast.style.borderColor = isError ? 'var(--accent-rose)' : 'var(--accent-indigo)';
     toast.classList.remove('hidden');
     setTimeout(() => {
       toast.classList.add('hidden');
-    }, 3000);
+    }, 3200);
   }
 
-  window.copyText = function(text) {
+  function copyText(text) {
+    if (!text) return;
     navigator.clipboard.writeText(text);
     showToast('Copied to clipboard!');
-  };
+  }
 
   function formatTime(isoStr) {
     if (!isoStr) return '-';
