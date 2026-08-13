@@ -795,11 +795,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function formatDuration(ms, status, startedAt) {
-    if (status === 'RUNNING' && startedAt) {
-      const startMs = new Date(startedAt).getTime();
-      const nowMs = Date.now();
-      const elapsedSec = Math.max(0, Math.floor((nowMs - startMs) / 1000));
-      return `${elapsedSec}s running...`;
+    if (status === 'RUNNING') {
+      if (startedAt) {
+        const startMs = new Date(startedAt).getTime();
+        if (!isNaN(startMs) && startMs > 0) {
+          const nowMs = Date.now();
+          const elapsedSec = Math.max(1, Math.floor((nowMs - startMs) / 1000));
+          return `${elapsedSec}s`;
+        }
+      }
+      return '1s';
     }
     if (!ms) return '0s';
     if (ms < 1000) return `${ms}ms`;

@@ -78,16 +78,21 @@ func (ds *DeploymentStore) Get(id string) (models.DeploymentLog, bool) {
 	defer ds.mu.RUnlock()
 
 	var d models.DeploymentLog
+	var startedAt NullTime
 	var completedAt NullTime
 	var logPath string
 
 	err := ds.db.QueryRow(`
 		SELECT id, project_id, project_name, repository, branch, commit_sha, commit_message, triggered_by, status, started_at, completed_at, duration_ms, log_path
 		FROM deployments WHERE id = ?
-	`, id).Scan(&d.ID, &d.ProjectID, &d.ProjectName, &d.Repository, &d.Branch, &d.CommitSHA, &d.CommitMessage, &d.TriggeredBy, &d.Status, &d.StartedAt, &completedAt, &d.DurationMs, &logPath)
+	`, id).Scan(&d.ID, &d.ProjectID, &d.ProjectName, &d.Repository, &d.Branch, &d.CommitSHA, &d.CommitMessage, &d.TriggeredBy, &d.Status, &startedAt, &completedAt, &d.DurationMs, &logPath)
 
 	if err != nil {
 		return models.DeploymentLog{}, false
+	}
+
+	if startedAt.Valid {
+		d.StartedAt = startedAt.Time
 	}
 
 	if completedAt.Valid {
@@ -122,9 +127,13 @@ func (ds *DeploymentStore) GetAll() []models.DeploymentLog {
 	var list []models.DeploymentLog
 	for rows.Next() {
 		var d models.DeploymentLog
+		var startedAt NullTime
 		var completedAt NullTime
 		var logPath string
-		if err := rows.Scan(&d.ID, &d.ProjectID, &d.ProjectName, &d.Repository, &d.Branch, &d.CommitSHA, &d.CommitMessage, &d.TriggeredBy, &d.Status, &d.StartedAt, &completedAt, &d.DurationMs, &logPath); err == nil {
+		if err := rows.Scan(&d.ID, &d.ProjectID, &d.ProjectName, &d.Repository, &d.Branch, &d.CommitSHA, &d.CommitMessage, &d.TriggeredBy, &d.Status, &startedAt, &completedAt, &d.DurationMs, &logPath); err == nil {
+			if startedAt.Valid {
+				d.StartedAt = startedAt.Time
+			}
 			if completedAt.Valid {
 				d.CompletedAt = completedAt.Time
 			}
@@ -152,9 +161,13 @@ func (ds *DeploymentStore) GetByProject(projectID string) []models.DeploymentLog
 	var list []models.DeploymentLog
 	for rows.Next() {
 		var d models.DeploymentLog
+		var startedAt NullTime
 		var completedAt NullTime
 		var logPath string
-		if err := rows.Scan(&d.ID, &d.ProjectID, &d.ProjectName, &d.Repository, &d.Branch, &d.CommitSHA, &d.CommitMessage, &d.TriggeredBy, &d.Status, &d.StartedAt, &completedAt, &d.DurationMs, &logPath); err == nil {
+		if err := rows.Scan(&d.ID, &d.ProjectID, &d.ProjectName, &d.Repository, &d.Branch, &d.CommitSHA, &d.CommitMessage, &d.TriggeredBy, &d.Status, &startedAt, &completedAt, &d.DurationMs, &logPath); err == nil {
+			if startedAt.Valid {
+				d.StartedAt = startedAt.Time
+			}
 			if completedAt.Valid {
 				d.CompletedAt = completedAt.Time
 			}
@@ -191,13 +204,19 @@ func (nt *NullTime) Scan(value any) error {
 		nt.Time, nt.Valid = v, true
 		return nil
 	case string:
-		t, err := time.Parse(time.RFC3339, v)
-		if err != nil {
-			t, err = time.Parse("2006-01-02 15:04:05.999999999-07:00", v)
+		formats := []string{
+			time.RFC3339,
+			time.RFC3339Nano,
+			"2006-01-02 15:04:05.999999999-07:00",
+			"2006-01-02 15:04:05.999999999",
+			"2006-01-02 15:04:05",
+			"2006-01-02T15:04:05Z",
 		}
-		if err == nil {
-			nt.Time, nt.Valid = t, true
-			return nil
+		for _, f := range formats {
+			if t, err := time.Parse(f, v); err == nil {
+				nt.Time, nt.Valid = t, true
+				return nil
+			}
 		}
 	}
 	nt.Time, nt.Valid = time.Time{}, false
