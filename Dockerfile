@@ -5,9 +5,8 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
-# Set reliable proxy fallback & disable checksum DB verification inside container to avoid TLS timeouts
-ENV GOPROXY=https://goproxy.io,direct
-ENV GOSUMDB=off
+# Enable standard GOPROXY with direct fallback
+ENV GOPROXY=https://proxy.golang.org,direct
 
 # Copy Go module definitions for caching
 COPY go.mod go.sum ./
