@@ -22,6 +22,9 @@ type Runner struct {
 }
 
 func NewRunner(ps *store.ProjectStore, ds *store.DeploymentStore) *Runner {
+	// Auto-configure git safe.directory '*' globally inside container on runner startup
+	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", "*").Run()
+
 	return &Runner{
 		projectStore:    ps,
 		deploymentStore: ds,
@@ -72,6 +75,9 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 	var logBuf bytes.Buffer
 	logBuf.WriteString(depLog.Log)
 
+	// Ensure git safe.directory is configured before executing deployment script
+	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", "*").Run()
+
 	// 1. Verify project path exists
 	cleanPath := strings.TrimSpace(project.ProjectPath)
 	if cleanPath == "" {
@@ -112,7 +118,7 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 
 	cmd.Dir = cleanPath
 
-	// Inherit environment variables & bypass Git safe directory restriction automatically like Jenkins
+	// Inherit environment variables & bypass Git safe directory restriction automatically
 	env := os.Environ()
 	env = append(env,
 		"GIT_CONFIG_COUNT=1",

@@ -26,6 +26,9 @@ FROM alpine:latest
 # Install ca-certificates, tzdata, git, docker-cli, docker-cli-compose, bash
 RUN apk --no-cache add ca-certificates mailcap tzdata git docker-cli docker-cli-compose bash
 
+# Permanently bypass Git safe.directory security restriction system-wide for all directories
+RUN git config --system --add safe.directory '*'
+
 WORKDIR /app
 
 # Copy built binary from builder stage
