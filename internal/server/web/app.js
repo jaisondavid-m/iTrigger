@@ -168,6 +168,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (action === 'copy-id') {
           copyText(btn.dataset.text || btn.textContent.trim());
+        } else if (action === 'quick-add-project') {
+          const repo = btn.dataset.repo;
+          openProjectModal({
+            name: repo ? repo.split('/').pop() : 'New Project',
+            repository: repo || '',
+            branch: 'main',
+            projectPath: '',
+            script: 'cd /path/to/project\ngit pull origin main\ndocker compose down\ndocker compose up --build -d',
+            enabled: true
+          });
         }
       });
     }
@@ -421,7 +431,16 @@ document.addEventListener('DOMContentLoaded', () => {
             </span>
           </td>
           <td><span class="badge badge-event-${escapeHTML(ev.eventType)}">${escapeHTML(ev.eventType)}</span></td>
-          <td><span style="font-family:var(--font-mono); color:var(--text-primary); font-weight:600;">${escapeHTML(ev.repositoryName || '-')}</span></td>
+          <td>
+            <div style="display:inline-flex; align-items:center; gap:0.5rem;">
+              <span style="font-family:var(--font-mono); color:var(--text-primary); font-weight:600;">${escapeHTML(ev.repositoryName || '-')}</span>
+              ${ev.repositoryName ? `
+                <button type="button" class="btn btn-xs btn-primary" data-action="quick-add-project" data-repo="${escapeHTML(ev.repositoryName)}" title="Add project for this repo">
+                  + Add Project
+                </button>
+              ` : ''}
+            </div>
+          </td>
           <td>${ev.action ? `<span class="badge badge-status-running">${escapeHTML(ev.action)}</span>` : '<span style="color:var(--text-muted);">-</span>'}</td>
           <td>${ev.prNumber ? `<span class="branch-badge">#${ev.prNumber}</span>` : '<span style="color:var(--text-muted);">-</span>'}</td>
           <td>${ev.prTitle ? `<div style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHTML(ev.prTitle)}">${escapeHTML(ev.prTitle)}</div>` : '<span style="color:var(--text-muted);">-</span>'}</td>

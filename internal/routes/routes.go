@@ -176,7 +176,23 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 		if err != nil {
 			log.Fatalf("failed to sub embed filesystem: %v", err)
 		}
-		mux.Handle("/", http.FileServer(http.FS(subFS)))
+		fileServer := http.FileServer(http.FS(subFS))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			path := strings.ToLower(r.URL.Path)
+			switch {
+			case strings.HasSuffix(path, ".css"):
+				w.Header().Set("Content-Type", "text/css; charset=utf-8")
+			case strings.HasSuffix(path, ".js"):
+				w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+			case strings.HasSuffix(path, ".html") || path == "/" || path == "":
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			case strings.HasSuffix(path, ".json"):
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			case strings.HasSuffix(path, ".svg"):
+				w.Header().Set("Content-Type", "image/svg+xml")
+			}
+			fileServer.ServeHTTP(w, r)
+		})
 	}
 }
 

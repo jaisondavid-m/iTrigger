@@ -18,8 +18,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
 # Stage 2: Final lightweight image
 FROM alpine:latest
 
-# Install ca-certificates for outbound HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates, mailcap (for MIME types), and tzdata
+RUN apk --no-cache add ca-certificates mailcap tzdata
 
 WORKDIR /app
 
