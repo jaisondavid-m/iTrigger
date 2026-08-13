@@ -13,15 +13,19 @@ import (
 	"strings"
 	"time"
 
+	"iTrigger/internal/deployer"
 	"iTrigger/internal/models"
+	"iTrigger/internal/store"
 )
 
 const githubSignaturePrefix = "sha256="
 
 type Handler struct {
-	secret []byte
-	logger *log.Logger
-	store  *Store
+	secret       []byte
+	logger       *log.Logger
+	store        *Store
+	projectStore *store.ProjectStore
+	runner       *deployer.Runner
 }
 
 func New(secret string, store *Store) *Handler {
@@ -33,6 +37,11 @@ func New(secret string, store *Store) *Handler {
 		logger: log.Default(),
 		store:  store,
 	}
+}
+
+func (h *Handler) SetDeployer(ps *store.ProjectStore, runner *deployer.Runner) {
+	h.projectStore = ps
+	h.runner = runner
 }
 
 func (h *Handler) Store() *Store {
@@ -88,6 +97,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				payload.HeadCommit.ID,
 				payload.HeadCommit.Message,
 			)
+
+			// Trigger automated deployments for matching projects
+			if h.projectStore != nil && h.runner != nil {
+				matching := h.projectStore.FindByRepoAndBranch(summary.RepositoryName, branch)
+				for _, proj := range matching {
+					h.logger.Printf("Auto-deploying matching project id=%s name=%s repo=%s branch=%s", proj.ID, proj.Name, proj.Repository, proj.Branch)
+					h.runner.TriggerDeployment(proj, "webhook:"+summary.Sender, payload.HeadCommit.ID, payload.HeadCommit.Message)
+				}
+			}
 		}
 	case "pull_request":
 		var payload models.PullRequestPayload
@@ -135,7 +153,6 @@ func (h *Handler) ClearEventsHandler(w http.ResponseWriter, r *http.Request) {
 	h.store.Clear()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
-
 
 func extractSummary(deliveryID, eventType string, body []byte) models.WebhookEventSummary {
 	summary := models.WebhookEventSummary{
@@ -206,15 +223,6 @@ func verifySignature(secret, body []byte, signature string) bool {
 
 func branchFromRef(ref string) string {
 	return strings.TrimPrefix(ref, "refs/heads/")
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
