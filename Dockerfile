@@ -5,7 +5,17 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
-# Copy all application files (including synchronized vendor directory)
+# Set reliable proxy fallback & disable checksum DB verification inside container to avoid TLS timeouts
+ENV GOPROXY=https://goproxy.io,direct
+ENV GOSUMDB=off
+
+# Copy Go module definitions for caching
+COPY go.mod go.sum ./
+
+# Download dependencies inside builder container
+RUN go mod download
+
+# Copy source code
 COPY . .
 
 # Build static binary
