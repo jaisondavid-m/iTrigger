@@ -92,8 +92,8 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 	// 2. Prepare command runner
 	script := strings.TrimSpace(project.Script)
 	if script == "" {
-		logBuf.WriteString("\n[WARNING] No deployment script defined for this project.\n")
-		depLog.Status = "SUCCESS"
+		logBuf.WriteString("\n[WARNING] No deployment script defined for this project. Skipping execution.\n")
+		depLog.Status = "SKIPPED"
 		depLog.CompletedAt = time.Now()
 		depLog.DurationMs = time.Since(startTime).Milliseconds()
 		depLog.Log = logBuf.String()
