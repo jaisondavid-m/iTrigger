@@ -112,8 +112,14 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 
 	cmd.Dir = cleanPath
 
-	// Inherit environment variables
-	cmd.Env = os.Environ()
+	// Inherit environment variables & bypass Git safe directory restriction automatically like Jenkins
+	env := os.Environ()
+	env = append(env,
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=safe.directory",
+		"GIT_CONFIG_VALUE_0=*",
+	)
+	cmd.Env = env
 
 	var outputBuf bytes.Buffer
 	cmd.Stdout = &outputBuf

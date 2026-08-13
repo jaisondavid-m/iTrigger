@@ -46,7 +46,6 @@ docker run -d --name itrigger -e GITHUB_WEBHOOK_SECRET=your-secret -p 8080:8080 
 
 ```env
 GITHUB_WEBHOOK_SECRET=your-secret
-DOMAIN_NAME=yourdomain.com
 ```
 *(Leave `DOMAIN_NAME` unset or as `localhost` for local testing with self-signed SSL)*.
 

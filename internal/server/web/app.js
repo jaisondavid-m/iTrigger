@@ -4,7 +4,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let deployments = [];
   let webhooks = [];
   let autoRefreshInterval = null;
+  let liveTickerInterval = null;
   let isAutoRefreshOn = true;
+  let activeTerminalDepId = null;
 
   // Header & Controls Elements
   const btnNewProject = document.getElementById('btnNewProject');
@@ -74,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     fetchAllData();
     startAutoRefresh();
+    startLiveTicker();
   }
 
   function setupEventListeners() {
@@ -245,14 +248,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- Auto-Refresh ---
+  // --- Auto-Refresh & Live Ticker ---
   function startAutoRefresh() {
     stopAutoRefresh();
     autoRefreshInterval = setInterval(() => {
       if (isAutoRefreshOn) {
         fetchAllData(true);
       }
-    }, 4000);
+    }, 2500);
   }
 
   function stopAutoRefresh() {
@@ -260,6 +263,23 @@ document.addEventListener('DOMContentLoaded', () => {
       clearInterval(autoRefreshInterval);
       autoRefreshInterval = null;
     }
+  }
+
+  function startLiveTicker() {
+    if (liveTickerInterval) clearInterval(liveTickerInterval);
+    liveTickerInterval = setInterval(() => {
+      const hasRunning = deployments.some(d => d.status === 'RUNNING');
+      if (hasRunning) {
+        renderDeployments();
+      }
+      // Streaming update terminal content if terminal modal is open for a running deployment
+      if (activeTerminalDepId) {
+        const activeDep = deployments.find(d => d.id === activeTerminalDepId);
+        if (activeDep && activeDep.status === 'RUNNING') {
+          fetchAndStreamTerminal(activeTerminalDepId);
+        }
+      }
+    }, 1000);
   }
 
   // --- Data Fetching ---
@@ -401,23 +421,37 @@ document.addEventListener('DOMContentLoaded', () => {
     if (emptyDeployments) emptyDeployments.classList.add('hidden');
     if (deploymentsTbody) {
       deploymentsTbody.innerHTML = deployments.map(d => {
-        const statusClass = d.status === 'SUCCESS' ? 'badge-status-success' : (d.status === 'FAILED' ? 'badge-status-failed' : 'badge-status-running');
+        const isRunning = d.status === 'RUNNING';
+        const isFailed = d.status === 'FAILED';
+
         return `
           <tr>
             <td>
-              ${d.status === 'FAILED' ? `
-                <span class="badge badge-status-failed clickable-badge" data-action="view-failure" data-id="${escapeHTML(d.id)}" title="Click to view why this deployment failed">
+              ${isRunning ? `
+                <span class="badge badge-status-running">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin" style="margin-right:4px; vertical-align:middle;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M12 2a10 10 0 0 1 10 10"></path>
+                  </svg>
+                  RUNNING
+                </span>
+              ` : (isFailed ? `
+                <span class="badge badge-status-failed clickable-badge" data-action="view-failure" data-id="${escapeHTML(d.id)}" title="Click to view failure details">
                   FAILED ⚠️
                 </span>
               ` : `
-                <span class="badge ${statusClass}">${escapeHTML(d.status)}</span>
-              `}
+                <span class="badge badge-status-success">${escapeHTML(d.status)}</span>
+              `)}
             </td>
             <td style="font-weight:700; color:white;">${escapeHTML(d.projectName || d.projectId)}</td>
             <td><span style="font-family:var(--font-mono); color:var(--accent-indigo);">${escapeHTML(d.repository)}</span></td>
             <td><span class="branch-badge">${escapeHTML(d.branch)}</span></td>
             <td><span class="sender-pill">${escapeHTML(d.triggeredBy || 'Manual')}</span></td>
-            <td><span style="font-family:var(--font-mono);">${formatDuration(d.durationMs)}</span></td>
+            <td>
+              <span style="font-family:var(--font-mono); font-weight:${isRunning ? 'bold' : 'normal'}; color:${isRunning ? '#38bdf8' : 'inherit'};">
+                ${formatDuration(d.durationMs, d.status, d.startedAt)}
+              </span>
+            </td>
             <td><span class="time-stamp">${formatTime(d.startedAt)}</span></td>
             <td>
               <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
@@ -428,7 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
                   </svg>
                   View Log
                 </button>
-                ${d.status === 'FAILED' ? `
+                ${isFailed ? `
                   <button type="button" class="btn btn-xs btn-danger-outline" data-action="view-failure" data-id="${escapeHTML(d.id)}" title="Click to view error diagnosis">
                     Why Failed?
                   </button>
@@ -658,17 +692,26 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function openTerminalModal(depId) {
+    activeTerminalDepId = depId;
     if (terminalTitle) terminalTitle.textContent = `Deployment Log: ${depId}`;
     if (terminalContent) terminalContent.textContent = 'Loading execution log output...';
     if (terminalModal) terminalModal.classList.remove('hidden');
 
+    await fetchAndStreamTerminal(depId);
+  }
+
+  async function fetchAndStreamTerminal(depId) {
     try {
       const res = await fetch(`/api/deployments/${depId}`);
       if (!res.ok) throw new Error('Log record not found');
       const data = await res.json();
       const dep = data.deployment;
       if (terminalTitle) terminalTitle.textContent = `Console Log — ${dep.projectName || dep.projectId} (${dep.repository}:${dep.branch})`;
-      if (terminalContent) terminalContent.textContent = dep.log || 'No log output recorded.';
+      if (terminalContent) {
+        terminalContent.textContent = dep.log || 'No log output recorded.';
+        // Auto scroll to bottom of log output
+        terminalContent.scrollTop = terminalContent.scrollHeight;
+      }
     } catch (err) {
       if (terminalContent) terminalContent.textContent = `Failed to load execution log: ${err.message}`;
     }
@@ -676,6 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function closeTerminalModal() {
     if (terminalModal) terminalModal.classList.add('hidden');
+    activeTerminalDepId = null;
   }
 
   async function openFailureModal(depId) {
@@ -696,7 +740,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (failMetaProject) failMetaProject.textContent = dep.projectName || dep.projectId;
       if (failMetaRepo) failMetaRepo.textContent = `${dep.repository}:${dep.branch}`;
       if (failMetaTrigger) failMetaTrigger.textContent = dep.triggeredBy || 'Manual';
-      if (failMetaTime) failMetaTime.textContent = `${formatTime(dep.startedAt)} (${formatDuration(dep.durationMs)})`;
+      if (failMetaTime) failMetaTime.textContent = `${formatTime(dep.startedAt)} (${formatDuration(dep.durationMs, dep.status, dep.startedAt)})`;
       if (failureContent) failureContent.textContent = dep.log || 'No detailed log recorded for this execution.';
     } catch (err) {
       if (failureContent) failureContent.textContent = `Failed to load failure record details: ${err.message}`;
@@ -750,7 +794,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function formatDuration(ms) {
+  function formatDuration(ms, status, startedAt) {
+    if (status === 'RUNNING' && startedAt) {
+      const startMs = new Date(startedAt).getTime();
+      const nowMs = Date.now();
+      const elapsedSec = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+      return `${elapsedSec}s running...`;
+    }
     if (!ms) return '0s';
     if (ms < 1000) return `${ms}ms`;
     const sec = (ms / 1000).toFixed(1);
