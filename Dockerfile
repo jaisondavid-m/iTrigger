@@ -5,12 +5,14 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
-# Copy module files and download dependencies
-COPY go.mod go.sum ./
-RUN go mod download
+# Enable GOPROXY with fallback
+ENV GOPROXY=https://proxy.golang.org,direct
 
-# Copy application source code
+# Copy all source code (including vendor directory if created)
 COPY . .
+
+# Download dependencies if vendor directory is not present
+RUN if [ ! -d "vendor" ]; then go mod download; fi
 
 # Build static binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
