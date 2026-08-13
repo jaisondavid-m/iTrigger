@@ -5,14 +5,18 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
-# Enable GOPROXY with fallback
-ENV GOPROXY=https://proxy.golang.org,direct
+# Configure resilient Go proxies with fallback to ensure fast, reliable downloads during docker compose
+ENV GOPROXY=https://goproxy.io,https://proxy.golang.org,direct
+ENV GOSUMDB=off
 
-# Copy all source code (including vendor directory if created)
+# Copy module definition files first for Docker layer caching
+COPY go.mod go.sum ./
+
+# Download dependencies automatically during build
+RUN go mod download
+
+# Copy rest of application source code
 COPY . .
-
-# Download dependencies if vendor directory is not present
-RUN if [ ! -d "vendor" ]; then go mod download; fi
 
 # Build static binary
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
