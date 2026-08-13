@@ -48,6 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalProjectTitle = document.getElementById('modalProjectTitle');
   const btnCloseProjectModal = document.getElementById('btnCloseProjectModal');
   const btnCancelProjectModal = document.getElementById('btnCancelProjectModal');
+  const scriptModeFile = document.getElementById('scriptModeFile');
+  const scriptModeCustom = document.getElementById('scriptModeCustom');
+  const scriptTextareaGroup = document.getElementById('scriptTextareaGroup');
+  const scriptFileNotice = document.getElementById('scriptFileNotice');
+  const projectScript = document.getElementById('projectScript');
 
   const terminalModal = document.getElementById('terminalModal');
   const terminalTitle = document.getElementById('terminalTitle');
@@ -80,6 +85,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setupEventListeners() {
+    // 0. Script Mode Radio Switcher
+    if (scriptModeFile && scriptModeCustom) {
+      scriptModeFile.addEventListener('change', toggleScriptMode);
+      scriptModeCustom.addEventListener('change', toggleScriptMode);
+    }
+
     // 1. Tab Switching
     if (navTabs) {
       navTabs.addEventListener('click', (e) => {
@@ -192,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
             repository: repo || '',
             branch: 'main',
             projectPath: '',
-            script: 'cd /path/to/project\ngit pull origin main\ndocker compose down\ndocker compose up --build -d',
+            script: '',
             enabled: true
           });
         }
@@ -248,6 +259,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  function toggleScriptMode() {
+    if (scriptModeCustom && scriptModeCustom.checked) {
+      if (scriptTextareaGroup) scriptTextareaGroup.classList.remove('hidden');
+      if (scriptFileNotice) scriptFileNotice.classList.add('hidden');
+    } else {
+      if (scriptTextareaGroup) scriptTextareaGroup.classList.add('hidden');
+      if (scriptFileNotice) scriptFileNotice.classList.remove('hidden');
+    }
+  }
+
   // --- Auto-Refresh & Live Ticker ---
   function startAutoRefresh() {
     stopAutoRefresh();
@@ -272,7 +293,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (hasRunning) {
         renderDeployments();
       }
-      // Streaming update terminal content if terminal modal is open for a running deployment
       if (activeTerminalDepId) {
         const activeDep = deployments.find(d => d.id === activeTerminalDepId);
         if (activeDep && activeDep.status === 'RUNNING') {
@@ -340,72 +360,77 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (emptyProjects) emptyProjects.classList.add('hidden');
     if (projectsGrid) {
-      projectsGrid.innerHTML = projects.map(p => `
-        <div class="project-card" data-project-id="${escapeHTML(p.id)}">
-          <div class="project-card-header">
-            <div class="project-name-wrap">
-              <span class="project-name">${escapeHTML(p.name)}</span>
-              <span class="project-repo">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path>
-                </svg>
-                ${escapeHTML(p.repository)}
+      projectsGrid.innerHTML = projects.map(p => {
+        const hasCustomScript = p.script && p.script.trim().length > 0 && !p.script.startsWith('# Auto-detect');
+        return `
+          <div class="project-card" data-project-id="${escapeHTML(p.id)}">
+            <div class="project-card-header">
+              <div class="project-name-wrap">
+                <span class="project-name">${escapeHTML(p.name)}</span>
+                <span class="project-repo">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path>
+                  </svg>
+                  ${escapeHTML(p.repository)}
+                </span>
+              </div>
+              <span class="badge ${p.enabled ? 'badge-status-success' : 'badge-status-failed'}">
+                ${p.enabled ? 'Enabled' : 'Disabled'}
               </span>
             </div>
-            <span class="badge ${p.enabled ? 'badge-status-success' : 'badge-status-failed'}">
-              ${p.enabled ? 'Enabled' : 'Disabled'}
-            </span>
-          </div>
 
-          <div class="project-details">
-            <div class="project-meta-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="6" y1="3" x2="6" y2="15"></line>
-                <circle cx="18" cy="6" r="3"></circle>
-                <circle cx="6" cy="18" r="3"></circle>
-                <path d="M18 9a9 9 0 0 1-9 9"></path>
-              </svg>
-              <span>Target Branch:</span>
-              <span class="branch-badge">${escapeHTML(p.branch)}</span>
-            </div>
-
-            <div class="project-meta-row">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              </svg>
-              <span>Server Path:</span>
-              <span class="path-code" data-action="copy-path" data-path="${escapeHTML(p.projectPath)}" title="Click to copy path">${escapeHTML(p.projectPath)}</span>
-            </div>
-
-            <div class="script-box">${escapeHTML(p.script || '# No script provided')}</div>
-          </div>
-
-          <div class="project-card-footer">
-            <div class="project-actions">
-              <button type="button" class="btn btn-xs btn-secondary" data-action="edit-project" data-id="${escapeHTML(p.id)}">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            <div class="project-details">
+              <div class="project-meta-row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="6" y1="3" x2="6" y2="15"></line>
+                  <circle cx="18" cy="6" r="3"></circle>
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <path d="M18 9a9 9 0 0 1-9 9"></path>
                 </svg>
-                Edit
-              </button>
-              <button type="button" class="btn btn-xs btn-danger-outline" data-action="delete-project" data-id="${escapeHTML(p.id)}">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <span>Target Branch:</span>
+                <span class="branch-badge">${escapeHTML(p.branch)}</span>
+              </div>
+
+              <div class="project-meta-row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                 </svg>
-                Delete
+                <span>Server Path:</span>
+                <span class="path-code" data-action="copy-path" data-path="${escapeHTML(p.projectPath)}" title="Click to copy path">${escapeHTML(p.projectPath)}</span>
+              </div>
+
+              <div class="script-box" style="${hasCustomScript ? '' : 'color:var(--accent-cyan); font-style:italic;'}">
+                ${hasCustomScript ? escapeHTML(p.script) : '⚡ Auto-discovering .itrigger script in repository root'}
+              </div>
+            </div>
+
+            <div class="project-card-footer">
+              <div class="project-actions">
+                <button type="button" class="btn btn-xs btn-secondary" data-action="edit-project" data-id="${escapeHTML(p.id)}">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                  Edit
+                </button>
+                <button type="button" class="btn btn-xs btn-danger-outline" data-action="delete-project" data-id="${escapeHTML(p.id)}">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                  Delete
+                </button>
+              </div>
+              <button type="button" class="btn btn-xs btn-success-outline" data-action="deploy-project" data-id="${escapeHTML(p.id)}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>Deploy Now</span>
               </button>
             </div>
-            <button type="button" class="btn btn-xs btn-success-outline" data-action="deploy-project" data-id="${escapeHTML(p.id)}">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="5 3 19 12 5 21 5 3"></polygon>
-              </svg>
-              <span>Deploy Now</span>
-            </button>
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
   }
 
@@ -570,8 +595,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('projectRepo').value = proj ? proj.repository : '';
     document.getElementById('projectBranch').value = proj ? proj.branch : 'main';
     document.getElementById('projectPath').value = proj ? proj.projectPath : '';
-    document.getElementById('projectScript').value = proj ? proj.script : 'cd /path/to/project\ngit pull origin main\ndocker compose down\ndocker compose up --build -d';
     document.getElementById('projectEnabled').checked = proj ? proj.enabled : true;
+
+    const hasCustomScript = proj && proj.script && proj.script.trim().length > 0 && !proj.script.startsWith('# Auto-detect');
+    if (hasCustomScript) {
+      if (scriptModeCustom) scriptModeCustom.checked = true;
+      if (projectScript) projectScript.value = proj.script;
+    } else {
+      if (scriptModeFile) scriptModeFile.checked = true;
+      if (projectScript) projectScript.value = '';
+    }
+
+    toggleScriptMode();
 
     if (modalProjectTitle) modalProjectTitle.textContent = proj ? 'Edit Deployment Project' : 'Add Deployment Project';
     if (projectModal) projectModal.classList.remove('hidden');
@@ -580,17 +615,21 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeProjectModal() {
     if (projectModal) projectModal.classList.add('hidden');
     if (projectForm) projectForm.reset();
+    toggleScriptMode();
   }
 
   async function saveProject(e) {
     e.preventDefault();
     const id = document.getElementById('projectId').value;
+    const isCustomMode = scriptModeCustom && scriptModeCustom.checked;
+    const scriptValue = isCustomMode ? (projectScript ? projectScript.value : '') : '';
+
     const body = {
       name: document.getElementById('projectName').value,
       repository: document.getElementById('projectRepo').value,
       branch: document.getElementById('projectBranch').value,
       projectPath: document.getElementById('projectPath').value,
-      script: document.getElementById('projectScript').value,
+      script: scriptValue,
       enabled: document.getElementById('projectEnabled').checked
     };
 
@@ -709,7 +748,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (terminalTitle) terminalTitle.textContent = `Console Log — ${dep.projectName || dep.projectId} (${dep.repository}:${dep.branch})`;
       if (terminalContent) {
         terminalContent.textContent = dep.log || 'No log output recorded.';
-        // Auto scroll to bottom of log output
         terminalContent.scrollTop = terminalContent.scrollHeight;
       }
     } catch (err) {

@@ -321,9 +321,27 @@
         </div>
 
         <div class="form-group">
-          <label for="projectScript">Deployment Execution Script <span class="req">*</span></label>
-          <textarea id="projectScript" class="form-textarea" rows="5" placeholder="cd /path/to/project&#10;git pull origin main&#10;docker compose down&#10;docker compose up --build -d" required></textarea>
-          <small class="form-help">Sequence of shell commands executed automatically upon deploy trigger.</small>
+          <label>Deployment Script Mode</label>
+          <div class="script-mode-options" style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.4rem; margin-bottom:0.5rem;">
+            <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-size:0.88rem; color:var(--text-primary);">
+              <input type="radio" name="scriptMode" value="file" id="scriptModeFile" checked>
+              <span>⚡ Auto-detect <code>.itrigger</code> / <code>itrigger.sh</code> in repository root</span>
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; font-size:0.88rem; color:var(--text-primary);">
+              <input type="radio" name="scriptMode" value="custom" id="scriptModeCustom">
+              <span>✍️ Write Custom Shell Script in UI</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group hidden" id="scriptTextareaGroup">
+          <label for="projectScript">Custom Shell Script</label>
+          <textarea id="projectScript" class="form-textarea" rows="4" placeholder="git pull origin main&#10;docker compose up --build --force-recreate -d"></textarea>
+          <small class="form-help">Shell commands executed automatically upon deploy trigger.</small>
+        </div>
+
+        <div class="form-group" id="scriptFileNotice" style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.25); border-radius:6px; padding:0.65rem 0.85rem; font-size:0.82rem; color:#38bdf8; line-height:1.4;">
+          💡 iTrigger will automatically discover and execute <code>.itrigger</code>, <code>.itrigger.sh</code>, or <code>itrigger.sh</code> from your repository root on the server.
         </div>
 
         <div class="form-group checkbox-group">
