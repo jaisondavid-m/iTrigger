@@ -50,9 +50,9 @@ flowchart TD
 1. **Environment Setup**:
    - [cmd/server/main.go](file:///e:/Projects/trigger-deploying/cmd/server/main.go) loads environment variables using `godotenv`.
    - Verifies the presence of `GITHUB_WEBHOOK_SECRET`. If missing, the server halts execution.
-2. **Server Initialization**:
-   - `server.New(secret)` initializes an in-memory thread-safe `webhook.Store` ([internal/webhook/store.go](file:///e:/Projects/trigger-deploying/internal/webhook/store.go)).
-   - Registers route handlers in Go `http.ServeMux` ([internal/server/server.go](file:///e:/Projects/trigger-deploying/internal/server/server.go)):
+2. **Server Initialization & Route Registration**:
+   - `server.New(secret)` delegates routing setup to `routes.Register(mux, secret, webFS)` ([internal/routes/routes.go](file:///e:/Projects/trigger-deploying/internal/routes/routes.go)).
+   - `routes.Register` initializes the in-memory `webhook.Store` ([internal/webhook/store.go](file:///e:/Projects/trigger-deploying/internal/webhook/store.go)) and maps route handlers on Go `http.ServeMux`:
      - `/health` & `/healthz` -> Health check handler
      - `/api/webhooks/github` -> GitHub Webhook POST handler
      - `/api/webhooks` -> Fetch stored events GET handler
