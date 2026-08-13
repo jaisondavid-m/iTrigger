@@ -42,14 +42,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const payloadTbody = document.getElementById('payloadTbody');
   const emptyState = document.getElementById('emptyState');
 
-  // Modals
+  // Modals & Script Mode Toggle
   const projectModal = document.getElementById('projectModal');
   const projectForm = document.getElementById('projectForm');
   const modalProjectTitle = document.getElementById('modalProjectTitle');
   const btnCloseProjectModal = document.getElementById('btnCloseProjectModal');
   const btnCancelProjectModal = document.getElementById('btnCancelProjectModal');
-  const scriptModeFile = document.getElementById('scriptModeFile');
-  const scriptModeCustom = document.getElementById('scriptModeCustom');
+  const btnScriptModeFile = document.getElementById('btnScriptModeFile');
+  const btnScriptModeCustom = document.getElementById('btnScriptModeCustom');
   const scriptTextareaGroup = document.getElementById('scriptTextareaGroup');
   const scriptFileNotice = document.getElementById('scriptFileNotice');
   const projectScript = document.getElementById('projectScript');
@@ -85,10 +85,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function setupEventListeners() {
-    // 0. Script Mode Radio Switcher
-    if (scriptModeFile && scriptModeCustom) {
-      scriptModeFile.addEventListener('change', toggleScriptMode);
-      scriptModeCustom.addEventListener('change', toggleScriptMode);
+    // 0. Script Mode Segmented Buttons
+    if (btnScriptModeFile && btnScriptModeCustom) {
+      btnScriptModeFile.addEventListener('click', () => setScriptMode('file'));
+      btnScriptModeCustom.addEventListener('click', () => setScriptMode('custom'));
     }
 
     // 1. Tab Switching
@@ -259,11 +259,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function toggleScriptMode() {
-    if (scriptModeCustom && scriptModeCustom.checked) {
+  function setScriptMode(mode) {
+    if (mode === 'custom') {
+      if (btnScriptModeCustom) btnScriptModeCustom.classList.add('active');
+      if (btnScriptModeFile) btnScriptModeFile.classList.remove('active');
       if (scriptTextareaGroup) scriptTextareaGroup.classList.remove('hidden');
       if (scriptFileNotice) scriptFileNotice.classList.add('hidden');
     } else {
+      if (btnScriptModeFile) btnScriptModeFile.classList.add('active');
+      if (btnScriptModeCustom) btnScriptModeCustom.classList.remove('active');
       if (scriptTextareaGroup) scriptTextareaGroup.classList.add('hidden');
       if (scriptFileNotice) scriptFileNotice.classList.remove('hidden');
     }
@@ -400,7 +404,7 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
 
               <div class="script-box" style="${hasCustomScript ? '' : 'color:var(--accent-cyan); font-style:italic;'}">
-                ${hasCustomScript ? escapeHTML(p.script) : '⚡ Auto-discovering .itrigger script in repository root'}
+                ${hasCustomScript ? escapeHTML(p.script) : '⚡ Auto-discovering .itrigger script in repo root'}
               </div>
             </div>
 
@@ -599,14 +603,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const hasCustomScript = proj && proj.script && proj.script.trim().length > 0 && !proj.script.startsWith('# Auto-detect');
     if (hasCustomScript) {
-      if (scriptModeCustom) scriptModeCustom.checked = true;
+      setScriptMode('custom');
       if (projectScript) projectScript.value = proj.script;
     } else {
-      if (scriptModeFile) scriptModeFile.checked = true;
+      setScriptMode('file');
       if (projectScript) projectScript.value = '';
     }
-
-    toggleScriptMode();
 
     if (modalProjectTitle) modalProjectTitle.textContent = proj ? 'Edit Deployment Project' : 'Add Deployment Project';
     if (projectModal) projectModal.classList.remove('hidden');
@@ -615,13 +617,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeProjectModal() {
     if (projectModal) projectModal.classList.add('hidden');
     if (projectForm) projectForm.reset();
-    toggleScriptMode();
+    setScriptMode('file');
   }
 
   async function saveProject(e) {
     e.preventDefault();
     const id = document.getElementById('projectId').value;
-    const isCustomMode = scriptModeCustom && scriptModeCustom.checked;
+    const isCustomMode = btnScriptModeCustom && btnScriptModeCustom.classList.contains('active');
     const scriptValue = isCustomMode ? (projectScript ? projectScript.value : '') : '';
 
     const body = {
