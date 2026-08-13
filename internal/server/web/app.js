@@ -53,6 +53,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCopyLog = document.getElementById('btnCopyLog');
   const btnCloseTerminalModal = document.getElementById('btnCloseTerminalModal');
 
+  // Failure Modal
+  const failureModal = document.getElementById('failureModal');
+  const failureContent = document.getElementById('failureContent');
+  const btnCloseFailureModal = document.getElementById('btnCloseFailureModal');
+  const btnCopyFailureLog = document.getElementById('btnCopyFailureLog');
+  const btnRetryDeployment = document.getElementById('btnRetryDeployment');
+  const failMetaProject = document.getElementById('failMetaProject');
+  const failMetaRepo = document.getElementById('failMetaRepo');
+  const failMetaTrigger = document.getElementById('failMetaTrigger');
+  const failMetaTime = document.getElementById('failMetaTime');
+  let currentFailedProjectId = null;
+
   const toast = document.getElementById('toast');
 
   // --- Initialize ---
@@ -155,6 +167,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (action === 'view-log') {
           openTerminalModal(id);
+        } else if (action === 'view-failure') {
+          openFailureModal(id);
         }
       });
     }
@@ -197,16 +211,36 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    if (btnCloseFailureModal) btnCloseFailureModal.addEventListener('click', closeFailureModal);
+    if (btnCopyFailureLog) {
+      btnCopyFailureLog.addEventListener('click', () => {
+        if (failureContent) {
+          navigator.clipboard.writeText(failureContent.textContent);
+          showToast('Failure log output copied to clipboard!');
+        }
+      });
+    }
+    if (btnRetryDeployment) {
+      btnRetryDeployment.addEventListener('click', () => {
+        if (currentFailedProjectId) {
+          closeFailureModal();
+          triggerDeploy(currentFailedProjectId);
+        }
+      });
+    }
+
     // Close modals on overlay click or Escape key
     window.addEventListener('click', (e) => {
       if (e.target === projectModal) closeProjectModal();
       if (e.target === terminalModal) closeTerminalModal();
+      if (e.target === failureModal) closeFailureModal();
     });
 
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeProjectModal();
         closeTerminalModal();
+        closeFailureModal();
       }
     });
   }
@@ -370,7 +404,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusClass = d.status === 'SUCCESS' ? 'badge-status-success' : (d.status === 'FAILED' ? 'badge-status-failed' : 'badge-status-running');
         return `
           <tr>
-            <td><span class="badge ${statusClass}">${escapeHTML(d.status)}</span></td>
+            <td>
+              ${d.status === 'FAILED' ? `
+                <span class="badge badge-status-failed clickable-badge" data-action="view-failure" data-id="${escapeHTML(d.id)}" title="Click to view why this deployment failed">
+                  FAILED ⚠️
+                </span>
+              ` : `
+                <span class="badge ${statusClass}">${escapeHTML(d.status)}</span>
+              `}
+            </td>
             <td style="font-weight:700; color:white;">${escapeHTML(d.projectName || d.projectId)}</td>
             <td><span style="font-family:var(--font-mono); color:var(--accent-indigo);">${escapeHTML(d.repository)}</span></td>
             <td><span class="branch-badge">${escapeHTML(d.branch)}</span></td>
@@ -378,13 +420,20 @@ document.addEventListener('DOMContentLoaded', () => {
             <td><span style="font-family:var(--font-mono);">${formatDuration(d.durationMs)}</span></td>
             <td><span class="time-stamp">${formatTime(d.startedAt)}</span></td>
             <td>
-              <button type="button" class="btn btn-xs btn-secondary" data-action="view-log" data-id="${escapeHTML(d.id)}">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="4 17 10 11 16 17 20 13"></polyline>
-                  <line x1="4" y1="7" x2="20" y2="7"></line>
-                </svg>
-                View Log
-              </button>
+              <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                <button type="button" class="btn btn-xs btn-secondary" data-action="view-log" data-id="${escapeHTML(d.id)}">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="4 17 10 11 16 17 20 13"></polyline>
+                    <line x1="4" y1="7" x2="20" y2="7"></line>
+                  </svg>
+                  View Log
+                </button>
+                ${d.status === 'FAILED' ? `
+                  <button type="button" class="btn btn-xs btn-danger-outline" data-action="view-failure" data-id="${escapeHTML(d.id)}" title="Click to view error diagnosis">
+                    Why Failed?
+                  </button>
+                ` : ''}
+              </div>
             </td>
           </tr>
         `;
@@ -627,6 +676,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function closeTerminalModal() {
     if (terminalModal) terminalModal.classList.add('hidden');
+  }
+
+  async function openFailureModal(depId) {
+    if (failureContent) failureContent.textContent = 'Loading failure diagnosis details...';
+    if (failMetaProject) failMetaProject.textContent = 'Loading...';
+    if (failMetaRepo) failMetaRepo.textContent = '-';
+    if (failMetaTrigger) failMetaTrigger.textContent = '-';
+    if (failMetaTime) failMetaTime.textContent = '-';
+    if (failureModal) failureModal.classList.remove('hidden');
+
+    try {
+      const res = await fetch(`/api/deployments/${depId}`);
+      if (!res.ok) throw new Error('Deployment log record not found');
+      const data = await res.json();
+      const dep = data.deployment;
+
+      currentFailedProjectId = dep.projectId;
+      if (failMetaProject) failMetaProject.textContent = dep.projectName || dep.projectId;
+      if (failMetaRepo) failMetaRepo.textContent = `${dep.repository}:${dep.branch}`;
+      if (failMetaTrigger) failMetaTrigger.textContent = dep.triggeredBy || 'Manual';
+      if (failMetaTime) failMetaTime.textContent = `${formatTime(dep.startedAt)} (${formatDuration(dep.durationMs)})`;
+      if (failureContent) failureContent.textContent = dep.log || 'No detailed log recorded for this execution.';
+    } catch (err) {
+      if (failureContent) failureContent.textContent = `Failed to load failure record details: ${err.message}`;
+    }
+  }
+
+  function closeFailureModal() {
+    if (failureModal) failureModal.classList.add('hidden');
+    currentFailedProjectId = null;
   }
 
   async function clearWebhooks() {
