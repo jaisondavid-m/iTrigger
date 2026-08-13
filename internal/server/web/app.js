@@ -533,7 +533,10 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify(body)
       });
 
-      if (!res.ok) throw new Error('Failed to save project');
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to save project');
+      }
       showToast(id ? 'Project updated successfully!' : 'Project created successfully!');
       closeProjectModal();
       fetchProjects();
@@ -551,7 +554,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!confirm('Are you sure you want to delete this project deployment config?')) return;
     try {
       const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete project');
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to delete project');
+      }
       showToast('Project deleted successfully');
       fetchProjects();
     } catch (err) {
@@ -576,7 +582,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       showToast('Triggering manual deployment...');
       const res = await fetch(`/api/projects/${id}/deploy`, { method: 'POST' });
-      if (!res.ok) throw new Error('Failed to trigger deployment');
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to trigger deployment');
+      }
       const data = await res.json();
       showToast('Deployment launched successfully!');
 
