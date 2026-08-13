@@ -76,14 +76,15 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 	var logBuf bytes.Buffer
 	logBuf.WriteString(depLog.Log)
 
-	// Ensure git safe.directory is configured before executing deployment script
-	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", "*").Run()
-
 	// 1. Verify project path exists
 	cleanPath := strings.TrimSpace(project.ProjectPath)
 	if cleanPath == "" {
 		cleanPath = "."
 	}
+
+	// Automatically run git safe.directory for the specific project path & wildcard
+	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", cleanPath).Run()
+	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", "*").Run()
 
 	fi, err := os.Stat(cleanPath)
 	if err != nil || !fi.IsDir() {
@@ -126,6 +127,11 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 		logBuf.WriteString(fmt.Sprintf("--> Detected repository deployment configuration %s\n", scriptSource))
 	}
 	logBuf.WriteString(fmt.Sprintf("Executing deployment script (%s) in %s...\n\n", scriptSource, cleanPath))
+
+	// Run git safe.directory specifically for cleanPath directory before executing user script
+	safeCmd := exec.Command("git", "config", "--global", "--add", "safe.directory", cleanPath)
+	safeCmd.Dir = cleanPath
+	_ = safeCmd.Run()
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
