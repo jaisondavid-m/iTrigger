@@ -5,21 +5,11 @@ FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
-# Configure resilient Go proxies with fallback to ensure fast, reliable downloads during docker compose
-ENV GOPROXY=https://goproxy.io,https://proxy.golang.org,direct
-ENV GOSUMDB=off
-
-# Copy module definition files first for Docker layer caching
-COPY go.mod go.sum ./
-
-# Download dependencies automatically during build
-RUN go mod download
-
-# Copy rest of application source code
+# Copy all application files (including vendor directory)
 COPY . .
 
-# Build static binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
+# Build static binary using vendor mode (fast & zero network dependency)
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -ldflags="-w -s" -o server ./cmd/server
 
 # Stage 2: Final lightweight image
 FROM alpine:latest
