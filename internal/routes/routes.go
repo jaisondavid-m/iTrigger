@@ -24,8 +24,8 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 		log.Fatalf("failed to initialize SQLite database: %v", err)
 	}
 
-	// Initialize stores using SQLite DB
-	webhookStore := webhook.NewStore()
+	// Initialize stores using persistent SQLite DB
+	webhookStore := webhook.NewStore(database)
 	projectStore := store.NewProjectStore(database)
 	deploymentStore := store.NewDeploymentStore(database)
 

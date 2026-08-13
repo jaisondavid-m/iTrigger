@@ -79,9 +79,21 @@ func createTables(db *sql.DB) error {
 		created_at DATETIME NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS webhooks (
+		delivery_id TEXT PRIMARY KEY,
+		event_type TEXT NOT NULL,
+		repository_name TEXT NOT NULL DEFAULT '',
+		action TEXT NOT NULL DEFAULT '',
+		pr_number INTEGER NOT NULL DEFAULT 0,
+		pr_title TEXT NOT NULL DEFAULT '',
+		sender TEXT NOT NULL DEFAULT '',
+		received_at TEXT NOT NULL
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_deployments_project_id ON deployments(project_id);
 	CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
 	CREATE INDEX IF NOT EXISTS idx_deployments_created_at ON deployments(created_at);
+	CREATE INDEX IF NOT EXISTS idx_webhooks_received_at ON webhooks(received_at);
 	`
 
 	_, err := db.Exec(schema)
