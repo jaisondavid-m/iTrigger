@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -95,10 +96,24 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 		return
 	}
 
-	// 2. Prepare command runner
+	// 2. Resolve deployment script (Check target repository for .itrigger, .itrigger.sh, itrigger.sh, or fallback to UI script)
+	scriptSource := "UI script"
 	script := strings.TrimSpace(project.Script)
+
+	repoFiles := []string{".itrigger", ".itrigger.sh", "itrigger.sh", filepath.Join(".itrigger", "deploy.sh")}
+	for _, fname := range repoFiles {
+		targetFile := filepath.Join(cleanPath, fname)
+		if info, err := os.Stat(targetFile); err == nil && !info.IsDir() {
+			if content, err := os.ReadFile(targetFile); err == nil && len(bytes.TrimSpace(content)) > 0 {
+				script = string(content)
+				scriptSource = fmt.Sprintf("file: %s", fname)
+				break
+			}
+		}
+	}
+
 	if script == "" {
-		logBuf.WriteString("\n[WARNING] No deployment script defined for this project. Skipping execution.\n")
+		logBuf.WriteString("\n[WARNING] No deployment script found in repository (.itrigger / .itrigger.sh / itrigger.sh) or project UI config. Skipping execution.\n")
 		depLog.Status = "SKIPPED"
 		depLog.CompletedAt = time.Now()
 		depLog.DurationMs = time.Since(startTime).Milliseconds()
@@ -107,7 +122,10 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 		return
 	}
 
-	logBuf.WriteString(fmt.Sprintf("Executing deployment script in %s...\n\n", cleanPath))
+	if scriptSource != "UI script" {
+		logBuf.WriteString(fmt.Sprintf("--> Detected repository deployment configuration %s\n", scriptSource))
+	}
+	logBuf.WriteString(fmt.Sprintf("Executing deployment script (%s) in %s...\n\n", scriptSource, cleanPath))
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
