@@ -1427,6 +1427,10 @@ input:checked + .slider:before {
 }
 
 /* --- Directory Browser Modal --- */
+#directoryModal {
+  z-index: 1100;
+}
+
 .dir-modal-card {
   max-width: 820px;
   width: 95%;
