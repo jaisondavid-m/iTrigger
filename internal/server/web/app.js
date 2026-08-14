@@ -72,6 +72,30 @@ document.addEventListener('DOMContentLoaded', () => {
   const failMetaTime = document.getElementById('failMetaTime');
   let currentFailedProjectId = null;
 
+  // Directory Browser Modal Elements
+  const directoryModal = document.getElementById('directoryModal');
+  const btnBrowsePath = document.getElementById('btnBrowsePath');
+  const btnCloseDirectoryModal = document.getElementById('btnCloseDirectoryModal');
+  const btnCancelDirectoryModal = document.getElementById('btnCancelDirectoryModal');
+  const btnSelectDirectory = document.getElementById('btnSelectDirectory');
+
+  const btnDirUp = document.getElementById('btnDirUp');
+  const btnDirShortcutRoot = document.getElementById('btnDirShortcutRoot');
+  const btnDirShortcutHome = document.getElementById('btnDirShortcutHome');
+  const btnDirShortcutCwd = document.getElementById('btnDirShortcutCwd');
+
+  const dirPathInput = document.getElementById('dirPathInput');
+  const btnDirGo = document.getElementById('btnDirGo');
+  const dirBreadcrumbs = document.getElementById('dirBreadcrumbs');
+  const dirStatusText = document.getElementById('dirStatusText');
+  const dirTags = document.getElementById('dirTags');
+  const dirExplorerList = document.getElementById('dirExplorerList');
+  const dirSelectedPath = document.getElementById('dirSelectedPath');
+
+  let currentBrowsePath = '';
+  let parentBrowsePath = '';
+  let selectedBrowsePath = '';
+
   const toast = document.getElementById('toast');
 
   // --- Initialize ---
@@ -234,11 +258,105 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     }
+
     if (btnRetryDeployment) {
       btnRetryDeployment.addEventListener('click', () => {
         if (currentFailedProjectId) {
+          const proj = projects.find(p => p.id === currentFailedProjectId);
           closeFailureModal();
-          triggerDeploy(currentFailedProjectId);
+          if (proj) {
+            triggerDeploy(proj.id);
+          }
+        }
+      });
+    }
+
+    // 8. Directory Browser Modal Listeners
+    if (btnBrowsePath) {
+      btnBrowsePath.addEventListener('click', () => {
+        const inputVal = document.getElementById('projectPath').value;
+        openDirectoryModal(inputVal);
+      });
+    }
+
+    if (btnCloseDirectoryModal) btnCloseDirectoryModal.addEventListener('click', closeDirectoryModal);
+    if (btnCancelDirectoryModal) btnCancelDirectoryModal.addEventListener('click', closeDirectoryModal);
+
+    if (btnSelectDirectory) {
+      btnSelectDirectory.addEventListener('click', () => {
+        if (selectedBrowsePath) {
+          document.getElementById('projectPath').value = selectedBrowsePath;
+          showToast(`Selected server path: ${selectedBrowsePath}`);
+        }
+        closeDirectoryModal();
+      });
+    }
+
+    if (btnDirUp) {
+      btnDirUp.addEventListener('click', () => {
+        if (parentBrowsePath) {
+          loadDirectory(parentBrowsePath);
+        }
+      });
+    }
+
+    if (btnDirShortcutRoot) {
+      btnDirShortcutRoot.addEventListener('click', () => loadDirectory('/'));
+    }
+    if (btnDirShortcutHome) {
+      btnDirShortcutHome.addEventListener('click', () => loadDirectory('~'));
+    }
+    if (btnDirShortcutCwd) {
+      btnDirShortcutCwd.addEventListener('click', () => loadDirectory('.'));
+    }
+
+    if (btnDirGo && dirPathInput) {
+      btnDirGo.addEventListener('click', () => {
+        if (dirPathInput.value.trim()) {
+          loadDirectory(dirPathInput.value.trim());
+        }
+      });
+      dirPathInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (dirPathInput.value.trim()) {
+            loadDirectory(dirPathInput.value.trim());
+          }
+        }
+      });
+    }
+
+    if (dirBreadcrumbs) {
+      dirBreadcrumbs.addEventListener('click', (e) => {
+        const crumb = e.target.closest('[data-path]');
+        if (crumb) {
+          loadDirectory(crumb.dataset.path);
+        }
+      });
+    }
+
+    if (dirExplorerList) {
+      dirExplorerList.addEventListener('click', (e) => {
+        const openBtn = e.target.closest('[data-action="open-folder"]');
+        if (openBtn) {
+          e.stopPropagation();
+          loadDirectory(openBtn.dataset.path);
+          return;
+        }
+
+        const row = e.target.closest('.dir-row');
+        if (!row) return;
+
+        if (row.classList.contains('is-folder')) {
+          const path = row.dataset.path;
+          document.querySelectorAll('.dir-row').forEach(r => r.classList.remove('selected'));
+          row.classList.add('selected');
+          selectedBrowsePath = path;
+          if (dirSelectedPath) dirSelectedPath.textContent = path;
+
+          if (e.detail === 2) {
+            loadDirectory(path);
+          }
         }
       });
     }
@@ -790,6 +908,181 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeFailureModal() {
     if (failureModal) failureModal.classList.add('hidden');
     currentFailedProjectId = null;
+  }
+
+  // --- Server Directory Browser Modal Logic ---
+  function openDirectoryModal(initialPath) {
+    if (directoryModal) directoryModal.classList.remove('hidden');
+    loadDirectory(initialPath || '');
+  }
+
+  function closeDirectoryModal() {
+    if (directoryModal) directoryModal.classList.add('hidden');
+  }
+
+  async function loadDirectory(pathStr) {
+    if (dirStatusText) dirStatusText.textContent = 'Listing server directory...';
+    if (dirExplorerList) {
+      dirExplorerList.innerHTML = `
+        <div style="padding:2.5rem; text-align:center; color:var(--text-muted);">
+          <div class="spin" style="display:inline-block; margin-bottom:0.5rem;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21.5 2v6h-6M2.13 15.57a10 10 0 0 0 16.59 4.34M2.5 22v-6h6M21.87 8.43A10 10 0 0 0 5.28 4.09"/>
+            </svg>
+          </div>
+          <div>Reading directory contents...</div>
+        </div>
+      `;
+    }
+
+    try {
+      const url = '/api/fs/browse' + (pathStr ? `?path=${encodeURIComponent(pathStr)}` : '');
+      const res = await fetch(url);
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to list directory');
+      }
+      const data = await res.json();
+      if (data.status !== 'success') throw new Error('Invalid response from server');
+
+      currentBrowsePath = data.currentPath || '';
+      parentBrowsePath = data.parentPath || '';
+      selectedBrowsePath = data.currentPath || '';
+
+      if (dirPathInput) dirPathInput.value = currentBrowsePath;
+      if (dirSelectedPath) dirSelectedPath.textContent = currentBrowsePath;
+
+      renderBreadcrumbs(currentBrowsePath);
+      renderDirTags(data.isRepo, data.hasTriggerScript);
+      renderDirectoryList(data.folders || [], data.files || []);
+
+      if (dirStatusText) {
+        dirStatusText.textContent = `Path: ${currentBrowsePath} (${(data.folders || []).length} folders, ${(data.files || []).length} files)`;
+      }
+    } catch (err) {
+      if (dirStatusText) dirStatusText.textContent = `Error: ${err.message}`;
+      if (dirExplorerList) {
+        dirExplorerList.innerHTML = `
+          <div style="padding:2rem; text-align:center; color:var(--accent-rose);">
+            <strong>Failed to access directory:</strong> ${escapeHTML(err.message)}
+          </div>
+        `;
+      }
+    }
+  }
+
+  function renderBreadcrumbs(fullPath) {
+    if (!dirBreadcrumbs) return;
+    if (!fullPath) {
+      dirBreadcrumbs.innerHTML = '<span class="crumb-item" data-path="/">/</span>';
+      return;
+    }
+
+    const isWin = fullPath.includes(':');
+    const parts = fullPath.split(/[/\\]/).filter(Boolean);
+    let html = '';
+    let accPath = '';
+
+    if (!isWin) {
+      html += `<span class="crumb-item" data-path="/">/</span>`;
+    }
+
+    parts.forEach((part, idx) => {
+      if (isWin && idx === 0) {
+        accPath = part;
+        if (!accPath.endsWith('/')) accPath += '/';
+      } else {
+        if (!accPath.endsWith('/') && accPath !== '') accPath += '/';
+        accPath += part;
+      }
+
+      if (idx > 0 || !isWin) {
+        html += `<span class="crumb-sep">/</span>`;
+      }
+      html += `<span class="crumb-item" data-path="${escapeHTML(accPath)}">${escapeHTML(part)}</span>`;
+    });
+
+    dirBreadcrumbs.innerHTML = html;
+  }
+
+  function renderDirTags(isRepo, hasTriggerScript) {
+    if (!dirTags) return;
+    let html = '';
+    if (isRepo) {
+      html += `<span class="tag-badge git">Git Repository</span>`;
+    }
+    if (hasTriggerScript) {
+      html += `<span class="tag-badge script">.itrigger Configured</span>`;
+    }
+    dirTags.innerHTML = html;
+  }
+
+  function renderDirectoryList(folders, files) {
+    if (!dirExplorerList) return;
+
+    if (folders.length === 0 && files.length === 0) {
+      dirExplorerList.innerHTML = `
+        <div style="padding:2.5rem; text-align:center; color:var(--text-muted);">
+          <div style="font-size:1.5rem; margin-bottom:0.4rem;">📂</div>
+          <div>Directory is empty</div>
+        </div>
+      `;
+      return;
+    }
+
+    let rowsHTML = '';
+
+    folders.forEach(f => {
+      let badges = '';
+      if (f.isRepo) badges += `<span class="badge-mini badge-mini-git">git</span>`;
+      if (f.hasTriggerScript) badges += `<span class="badge-mini badge-mini-script">.itrigger</span>`;
+
+      const modDate = f.modTime ? formatTime(f.modTime) : '-';
+
+      rowsHTML += `
+        <div class="dir-row is-folder" data-path="${escapeHTML(f.path)}">
+          <div class="dir-row-name">
+            <span class="dir-icon icon-folder-svg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </span>
+            <span>${escapeHTML(f.name)}</span>
+            <div class="dir-badges-inline">${badges}</div>
+          </div>
+          <div class="dir-row-date">${modDate}</div>
+          <div class="dir-row-action">
+            <button type="button" class="btn-open-dir" data-action="open-folder" data-path="${escapeHTML(f.path)}" title="Open directory (cd ${escapeHTML(f.name)})">
+              Open &rarr;
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    files.forEach(f => {
+      const modDate = f.modTime ? formatTime(f.modTime) : '-';
+
+      rowsHTML += `
+        <div class="dir-row is-file" data-path="${escapeHTML(f.path)}">
+          <div class="dir-row-name">
+            <span class="dir-icon icon-file-svg">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M13 2H6a2 2 0 0 1-2 2v16a2 2 0 0 1 2 2h12a2 2 0 0 1 2-2V9z"></path>
+                <polyline points="13 2 13 9 20 9"></polyline>
+              </svg>
+            </span>
+            <span>${escapeHTML(f.name)}</span>
+          </div>
+          <div class="dir-row-date">${modDate}</div>
+          <div class="dir-row-action">
+            <span style="font-size:0.75rem; color:var(--text-muted);">-</span>
+          </div>
+        </div>
+      `;
+    });
+
+    dirExplorerList.innerHTML = rowsHTML;
   }
 
   async function clearWebhooks() {

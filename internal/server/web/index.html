@@ -316,7 +316,15 @@
 
         <div class="form-group">
           <label for="projectPath">Server Directory Path <span class="req">*</span></label>
-          <input type="text" id="projectPath" class="form-input" placeholder="e.g. /var/www/my-app or E:/Projects/my-app" required>
+          <div class="input-with-button">
+            <input type="text" id="projectPath" class="form-input" placeholder="e.g. /var/www/my-app or E:/Projects/my-app" required>
+            <button type="button" id="btnBrowsePath" class="btn btn-secondary btn-browse" title="Browse directories on server">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span>Browse...</span>
+            </button>
+          </div>
           <small class="form-help">Absolute directory path on the server where deployment commands execute.</small>
         </div>
 
@@ -453,6 +461,89 @@
           </svg>
           <span>Retry Deployment Now</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: Interactive Directory Browser Modal -->
+  <div id="directoryModal" class="modal-overlay hidden" aria-hidden="true" role="dialog">
+    <div class="modal-card modal-lg dir-modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-icon icon-folder">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div>
+            <h3>Server Directory Browser</h3>
+            <p style="font-size: 0.78rem; color: var(--text-secondary); margin-top: 1px;">Navigate server directories via live background listing</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close" id="btnCloseDirectoryModal" aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body dir-modal-body">
+        <!-- Navigation bar -->
+        <div class="dir-nav-bar">
+          <button type="button" id="btnDirUp" class="btn btn-secondary btn-icon-only" title="Go up to parent directory (cd ..)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
+            <span class="sr-only">Up</span>
+          </button>
+          
+          <div class="dir-shortcuts">
+            <button type="button" class="btn-chip" id="btnDirShortcutRoot" title="Go to Root Directory (/)">/</button>
+            <button type="button" class="btn-chip" id="btnDirShortcutHome" title="Go to Server Home Directory (~)">~ Home</button>
+            <button type="button" class="btn-chip" id="btnDirShortcutCwd" title="Server App Directory">App Root</button>
+          </div>
+
+          <div class="dir-path-input-wrap">
+            <input type="text" id="dirPathInput" class="form-input dir-path-input" placeholder="Type path e.g. /var/www...">
+            <button type="button" id="btnDirGo" class="btn btn-secondary btn-xs">Go</button>
+          </div>
+        </div>
+
+        <!-- Breadcrumbs bar -->
+        <div class="dir-breadcrumbs" id="dirBreadcrumbs">
+          <!-- Rendered dynamically -->
+        </div>
+
+        <!-- Status / Detection Notice -->
+        <div class="dir-status-bar" id="dirStatusBar">
+          <span class="dir-status-text" id="dirStatusText">Loading directory contents...</span>
+          <div class="dir-tags" id="dirTags"></div>
+        </div>
+
+        <!-- Directory List explorer -->
+        <div class="dir-explorer-container">
+          <div class="dir-explorer-header">
+            <span>Folder / File Name</span>
+            <span>Modified Date</span>
+            <span style="text-align:right;">Action</span>
+          </div>
+          <div class="dir-explorer-list" id="dirExplorerList">
+            <!-- Rendered dynamically by app.js -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer dir-modal-footer">
+        <div class="dir-selected-preview">
+          <span class="preview-label">Selected Directory:</span>
+          <span class="preview-path" id="dirSelectedPath">/</span>
+        </div>
+        <div class="dir-footer-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancelDirectoryModal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnSelectDirectory">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            <span>Select This Directory</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
