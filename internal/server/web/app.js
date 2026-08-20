@@ -791,6 +791,7 @@ document.addEventListener('DOMContentLoaded', () => {
       projectsGrid.innerHTML = projects.map(p => {
         const hasCustomScript = p.script && p.script.trim().length > 0 && !p.script.startsWith('# Auto-detect');
         const isRead = p.userPermission === 'read';
+        const isWriteOnly = p.userPermission === 'write';
         return `
           <div class="project-card" data-project-id="${escapeHTML(p.id)}">
             <div class="project-card-header">
@@ -868,6 +869,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </svg>
                     Edit
                   </button>
+                  ${isWriteOnly ? '' : `
                   <button type="button" class="btn btn-xs btn-danger-outline" data-action="delete-project" data-id="${escapeHTML(p.id)}">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="3 6 5 6 21 6"></polyline>
@@ -875,6 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     </svg>
                     Delete
                   </button>
+                  `}
                 </div>
                 <button type="button" class="btn btn-xs btn-success-outline" data-action="deploy-project" data-id="${escapeHTML(p.id)}">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1587,6 +1590,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <option value="none" ${currentVal === 'none' ? 'selected' : ''}>No Access</option>
                 <option value="read" ${currentVal === 'read' ? 'selected' : ''}>Read-Only</option>
                 <option value="write" ${currentVal === 'write' ? 'selected' : ''}>Write / Trigger</option>
+                <option value="delete" ${currentVal === 'delete' ? 'selected' : ''}>Write / Trigger / Delete</option>
               </select>
             </td>
           </tr>
@@ -1652,8 +1656,15 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const [projId, perm] of Object.entries(u.permissions)) {
           const p = projects.find(proj => proj.id === projId);
           if (p) {
-            const permLabel = perm === 'write' ? 'Write' : 'Read';
-            const color = perm === 'write' ? 'var(--accent-emerald)' : 'var(--text-secondary)';
+            let permLabel = 'Read';
+            let color = 'var(--text-secondary)';
+            if (perm === 'write') {
+              permLabel = 'Write';
+              color = 'var(--accent-cyan)';
+            } else if (perm === 'delete') {
+              permLabel = 'Write+Delete';
+              color = 'var(--accent-emerald)';
+            }
             list.push(`<span style="color:${color}">${escapeHTML(p.name)} (${permLabel})</span>`);
           }
         }

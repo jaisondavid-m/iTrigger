@@ -303,9 +303,9 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				return
 			}
 
-			// Non-admin creators get write permission by default
+			// Non-admin creators get delete permission by default
 			if isAdmin != 1 {
-				_, _ = database.Exec("INSERT OR REPLACE INTO user_project_permissions (username, project_id, permission) VALUES (?, ?, 'write')", username, proj.ID)
+				_, _ = database.Exec("INSERT OR REPLACE INTO user_project_permissions (username, project_id, permission) VALUES (?, ?, 'delete')", username, proj.ID)
 			}
 
 			writeJSON(w, http.StatusCreated, map[string]any{
@@ -343,11 +343,11 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				return
 			}
 
-			// Validate write permission
+			// Validate write/delete permission
 			if isAdmin != 1 {
 				var perm string
 				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, projectID).Scan(&perm)
-				if err != nil || perm != "write" {
+				if err != nil || (perm != "write" && perm != "delete") {
 					http.Error(w, "forbidden", http.StatusForbidden)
 					return
 				}
@@ -388,11 +388,11 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				"project": proj,
 			})
 		case http.MethodPut, http.MethodPost:
-			// Validate write permission
+			// Validate write/delete permission
 			if isAdmin != 1 {
 				var perm string
 				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, projectID).Scan(&perm)
-				if err != nil || perm != "write" {
+				if err != nil || (perm != "write" && perm != "delete") {
 					http.Error(w, "forbidden", http.StatusForbidden)
 					return
 				}
@@ -413,11 +413,11 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				"project": proj,
 			})
 		case http.MethodDelete:
-			// Validate write permission
+			// Validate delete permission
 			if isAdmin != 1 {
 				var perm string
 				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, projectID).Scan(&perm)
-				if err != nil || perm != "write" {
+				if err != nil || perm != "delete" {
 					http.Error(w, "forbidden", http.StatusForbidden)
 					return
 				}
