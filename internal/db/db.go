@@ -12,6 +12,7 @@ import (
 	"iTrigger/internal/models"
 
 	_ "modernc.org/sqlite"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // InitDB initializes SQLite connection, creates tables/indexes, and runs migrations.
@@ -38,6 +39,31 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	if err := createTables(db); err != nil {
 		db.Close()
 		return nil, err
+	}
+
+	// Initialize default user if users table is empty
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to count users: %w", err)
+	}
+	if count == 0 {
+		hashed, err := bcrypt.GenerateFromPassword([]byte("itrigger"), bcrypt.DefaultCost)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to hash default password: %w", err)
+		}
+		now := time.Now()
+		_, err = db.Exec(`
+			INSERT INTO users (username, password_hash, created_at, updated_at)
+			VALUES (?, ?, ?, ?)
+		`, "itrigger", string(hashed), now, now)
+		if err != nil {
+			db.Close()
+			return nil, fmt.Errorf("failed to insert default user: %w", err)
+		}
+		log.Println("[DB] Successfully initialized default user 'itrigger' with password 'itrigger'")
 	}
 
 	if err := migrateLegacyJSON(db, dataDir); err != nil {
@@ -88,6 +114,13 @@ func createTables(db *sql.DB) error {
 		pr_title TEXT NOT NULL DEFAULT '',
 		sender TEXT NOT NULL DEFAULT '',
 		received_at TEXT NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS users (
+		username TEXT PRIMARY KEY,
+		password_hash TEXT NOT NULL,
+		created_at DATETIME NOT NULL,
+		updated_at DATETIME NOT NULL
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_deployments_project_id ON deployments(project_id);

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"iTrigger/internal/auth"
 	"iTrigger/internal/backup"
 	"iTrigger/internal/db"
 	"iTrigger/internal/deployer"
@@ -38,17 +39,27 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 	webhookHandler := webhook.New(secret, webhookStore)
 	webhookHandler.SetDeployer(projectStore, runner)
 
+	// Initialize Auth Module
+	sessionStore := auth.NewSessionStore()
+	authHandler := auth.NewAuthHandler(database, sessionStore)
+
+	// Authentication API endpoints
+	mux.HandleFunc("/api/auth/login", authHandler.Login)
+	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
+	mux.HandleFunc("/api/auth/status", authHandler.Status)
+	mux.HandleFunc("/api/auth/settings", authHandler.UpdateSettings)
+
 	// Health check endpoints
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
 	// Webhook API endpoints
 	mux.Handle("/api/webhooks/github", webhookHandler)
-	mux.HandleFunc("/api/webhooks", webhookHandler.GetEventsHandler)
-	mux.HandleFunc("/api/webhooks/clear", webhookHandler.ClearEventsHandler)
+	mux.HandleFunc("/api/webhooks", RequireAuth(sessionStore, webhookHandler.GetEventsHandler))
+	mux.HandleFunc("/api/webhooks/clear", RequireAuth(sessionStore, webhookHandler.ClearEventsHandler))
 
 	// Backup endpoint
-	mux.HandleFunc("/api/backups", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/backups", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -62,10 +73,10 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			"status": "success",
 			"path":   backupPath,
 		})
-	})
+	}))
 
 	// Server Filesystem Directory Browser API
-	mux.HandleFunc("/api/fs/browse", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/fs/browse", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -197,10 +208,10 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			"folders":          folders,
 			"files":            files,
 		})
-	})
+	}))
 
 	// Project Management API endpoints
-	mux.HandleFunc("/api/projects", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/projects", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			projects := projectStore.GetAll()
@@ -226,9 +237,9 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}))
 
-	mux.HandleFunc("/api/projects/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/projects/", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/projects/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
 		if len(parts) == 0 || parts[0] == "" {
@@ -295,10 +306,10 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}))
 
 	// Deployment Logs API endpoints
-	mux.HandleFunc("/api/deployments", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/deployments", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -309,9 +320,9 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			"count":       len(deployments),
 			"deployments": deployments,
 		})
-	})
+	}))
 
-	mux.HandleFunc("/api/deployments/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/deployments/", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -347,7 +358,7 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			"status":     "success",
 			"deployment": depLog,
 		})
-	})
+	}))
 
 	// Static web interface
 	if webFS != nil {
@@ -390,5 +401,21 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		log.Printf("failed to encode response: %v", err)
+	}
+}
+
+func RequireAuth(sessionStore *auth.SessionStore, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session_token")
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, ok := sessionStore.Get(cookie.Value)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
 	}
 }

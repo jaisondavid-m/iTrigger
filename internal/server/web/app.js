@@ -42,6 +42,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const payloadTbody = document.getElementById('payloadTbody');
   const emptyState = document.getElementById('emptyState');
 
+  // Authentication & Settings Elements
+  const loginOverlay = document.getElementById('loginOverlay');
+  const loginForm = document.getElementById('loginForm');
+  const settingsForm = document.getElementById('settingsForm');
+  const btnLogout = document.getElementById('btnLogout');
+
   // Modals & Script Mode Toggle
   const projectModal = document.getElementById('projectModal');
   const projectForm = document.getElementById('projectForm');
@@ -103,11 +109,139 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Initialize ---
   init();
 
-  function init() {
+  async function init() {
     setupEventListeners();
-    fetchAllData();
-    startAutoRefresh();
-    startLiveTicker();
+    const authenticated = await checkAuth();
+    if (authenticated) {
+      fetchAllData();
+      startAutoRefresh();
+      startLiveTicker();
+    }
+  }
+
+  let currentUser = null;
+
+  async function checkAuth() {
+    try {
+      const res = await fetch('/api/auth/status');
+      if (!res.ok) throw new Error('Unauthenticated');
+      const data = await res.json();
+      if (data.authenticated) {
+        currentUser = data.username;
+        if (loginOverlay) loginOverlay.classList.add('hidden');
+        
+        // Update newUsername field in Settings form
+        const newUsernameEl = document.getElementById('newUsername');
+        if (newUsernameEl) newUsernameEl.value = currentUser;
+        
+        return true;
+      } else {
+        throw new Error('Unauthenticated');
+      }
+    } catch (err) {
+      currentUser = null;
+      if (loginOverlay) loginOverlay.classList.remove('hidden');
+      stopAutoRefresh();
+      return false;
+    }
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    const username = document.getElementById('loginUsername').value;
+    const password = document.getElementById('loginPassword').value;
+    const loginBtn = document.getElementById('btnLoginSubmit');
+    const origText = loginBtn ? loginBtn.innerHTML : '';
+    if (loginBtn) {
+      loginBtn.disabled = true;
+      loginBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        Authenticating...
+      `;
+    }
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (!res.ok) {
+        if (res.status === 401) throw new Error('Invalid username or password');
+        throw new Error('Failed to authenticate');
+      }
+      showToast('Authentication successful!');
+      if (loginForm) loginForm.reset();
+      
+      const authenticated = await checkAuth();
+      if (authenticated) {
+        fetchAllData();
+        startAutoRefresh();
+        startLiveTicker();
+      }
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = origText;
+      }
+    }
+  }
+
+  async function handleLogout() {
+    if (!confirm('Are you sure you want to log out?')) return;
+    try {
+      const res = await fetch('/api/auth/logout', { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to log out');
+      showToast('Logged out successfully');
+      checkAuth();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  async function handleSaveSettings(e) {
+    e.preventDefault();
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newUsername = document.getElementById('newUsername').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const saveBtn = document.getElementById('btnSaveSettings');
+    const origText = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        Saving Changes...
+      `;
+    }
+    try {
+      const res = await fetch('/api/auth/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newUsername, newPassword })
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to update credentials');
+      }
+      showToast('Credentials updated successfully!');
+      if (settingsForm) settingsForm.reset();
+      
+      await checkAuth();
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = origText;
+      }
+    }
   }
 
   function setupEventListeners() {
@@ -230,6 +364,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnCloseProjectModal) btnCloseProjectModal.addEventListener('click', closeProjectModal);
     if (btnCancelProjectModal) btnCancelProjectModal.addEventListener('click', closeProjectModal);
     if (projectForm) projectForm.addEventListener('submit', saveProject);
+
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    if (settingsForm) settingsForm.addEventListener('submit', handleSaveSettings);
+    if (btnLogout) btnLogout.addEventListener('click', handleLogout);
 
     if (btnGenerateSecret) {
       console.log("[iTrigger] btnGenerateSecret found. Attaching click listener.");
@@ -463,6 +601,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function fetchProjects(silent = false) {
     try {
       const res = await fetch('/api/projects');
+      if (res.status === 401) {
+        checkAuth();
+        return;
+      }
       if (!res.ok) throw new Error('Failed to load projects');
       const data = await res.json();
       projects = data.projects || [];
@@ -476,6 +618,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function fetchDeployments(silent = false) {
     try {
       const res = await fetch('/api/deployments');
+      if (res.status === 401) {
+        checkAuth();
+        return;
+      }
       if (!res.ok) throw new Error('Failed to load deployments');
       const data = await res.json();
       deployments = data.deployments || [];
@@ -489,6 +635,10 @@ document.addEventListener('DOMContentLoaded', () => {
   async function fetchWebhooks(silent = false) {
     try {
       const res = await fetch('/api/webhooks');
+      if (res.status === 401) {
+        checkAuth();
+        return;
+      }
       if (!res.ok) throw new Error('Failed to load webhooks');
       const data = await res.json();
       webhooks = data.events || [];
@@ -971,6 +1121,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const url = '/api/fs/browse' + (pathStr ? `?path=${encodeURIComponent(pathStr)}` : '');
       const res = await fetch(url);
+      if (res.status === 401) {
+        checkAuth();
+        return;
+      }
       if (!res.ok) {
         const errText = await res.text();
         throw new Error(errText || 'Failed to list directory');
