@@ -232,30 +232,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (projectForm) projectForm.addEventListener('submit', saveProject);
 
     if (btnGenerateSecret) {
+      console.log("[iTrigger] btnGenerateSecret found. Attaching click listener.");
       btnGenerateSecret.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        console.log("[iTrigger] Generate webhook secret button clicked.");
         try {
           let secret = '';
           if (window.crypto && window.crypto.getRandomValues) {
             const array = new Uint8Array(20);
             window.crypto.getRandomValues(array);
             secret = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+            console.log("[iTrigger] Generated secret using crypto.getRandomValues");
           } else {
             // Fallback for non-secure contexts / older browsers
             for (let i = 0; i < 40; i++) {
               secret += Math.floor(Math.random() * 16).toString(16);
             }
+            console.log("[iTrigger] Generated secret using Math.random fallback");
           }
           if (projectSecret) {
             projectSecret.value = secret;
             showToast('Generated secure random secret!');
+          } else {
+            console.warn("[iTrigger] projectSecret input element not found.");
           }
         } catch (err) {
           console.error('Failed to generate secret:', err);
           showToast('Failed to generate secret. Please enter one manually.', true);
         }
       });
+    } else {
+      console.warn("[iTrigger] btnGenerateSecret button not found in DOM.");
     }
 
     if (btnCloseTerminalModal) btnCloseTerminalModal.addEventListener('click', closeTerminalModal);
