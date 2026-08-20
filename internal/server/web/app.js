@@ -981,7 +981,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const isWin = fullPath.includes(':');
     const parts = fullPath.split(/[/\\]/).filter(Boolean);
     let html = '';
-    let accPath = '';
+    let accPath = isWin ? '' : '/';
 
     if (!isWin) {
       html += `<span class="crumb-item" data-path="/">/</span>`;
