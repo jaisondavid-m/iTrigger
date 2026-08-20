@@ -483,11 +483,6 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 	}))
 
 	mux.HandleFunc("/api/deployments/", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
 		subPath := strings.TrimPrefix(r.URL.Path, "/api/deployments/")
 		parts := strings.Split(strings.Trim(subPath, "/"), "/")
 
@@ -509,6 +504,33 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
+		}
+
+		// Handle POST /api/deployments/{id}/stop
+		if len(parts) == 2 && parts[1] == "stop" && r.Method == http.MethodPost {
+			// Require write/delete permission to stop
+			if isAdmin != 1 {
+				var perm string
+				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, depLog.ProjectID).Scan(&perm)
+				if err != nil || (perm != "write" && perm != "delete") {
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+
+			if err := runner.StopDeployment(depID); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status": "stopped",
+			})
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
 		}
 
 		// Handle /api/deployments/{id}/logs or /api/deployments/{id}/log

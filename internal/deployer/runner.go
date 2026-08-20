@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"iTrigger/internal/models"
@@ -20,6 +21,8 @@ import (
 type Runner struct {
 	projectStore    *store.ProjectStore
 	deploymentStore *store.DeploymentStore
+	mu              sync.Mutex
+	activeCmds      map[string]*exec.Cmd
 }
 
 func NewRunner(ps *store.ProjectStore, ds *store.DeploymentStore) *Runner {
@@ -29,6 +32,7 @@ func NewRunner(ps *store.ProjectStore, ds *store.DeploymentStore) *Runner {
 	return &Runner{
 		projectStore:    ps,
 		deploymentStore: ds,
+		activeCmds:      make(map[string]*exec.Cmd),
 	}
 }
 
@@ -155,8 +159,24 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 	cmd.Stdout = &outputBuf
 	cmd.Stderr = &outputBuf
 
+	// Register active command before starting
+	r.mu.Lock()
+	r.activeCmds[depLog.ID] = cmd
+	r.mu.Unlock()
+
+	defer func() {
+		r.mu.Lock()
+		delete(r.activeCmds, depLog.ID)
+		r.mu.Unlock()
+	}()
+
 	err = cmd.Run()
 	logBuf.Write(outputBuf.Bytes())
+
+	// If manual stop set it to STOPPED, do not overwrite it here
+	if current, ok := r.deploymentStore.Get(depLog.ID); ok && current.Status == "STOPPED" {
+		return
+	}
 
 	depLog.CompletedAt = time.Now()
 	depLog.DurationMs = time.Since(startTime).Milliseconds()
@@ -173,4 +193,33 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 
 	depLog.Log = logBuf.String()
 	r.deploymentStore.Update(depLog)
+}
+
+func (r *Runner) StopDeployment(depID string) error {
+	r.mu.Lock()
+	cmd, ok := r.activeCmds[depID]
+	r.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("deployment is not running or already completed")
+	}
+
+	if cmd.Process != nil {
+		// Update status first to ensure the goroutine doesn't overwrite it
+		depLog, ok := r.deploymentStore.Get(depID)
+		if ok {
+			depLog.Status = "STOPPED"
+			depLog.CompletedAt = time.Now()
+			depLog.Log += "\n----------------------------------------\n[STOPPED] Deployment stopped manually by administrator.\n"
+			r.deploymentStore.Update(depLog)
+		}
+
+		err := cmd.Process.Kill()
+		if err != nil {
+			return fmt.Errorf("failed to stop deployment process: %w", err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("process not started yet")
 }

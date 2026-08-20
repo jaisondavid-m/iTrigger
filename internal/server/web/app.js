@@ -433,6 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
           openTerminalModal(id);
         } else if (action === 'view-failure') {
           openFailureModal(id);
+        } else if (action === 'stop-deployment') {
+          stopDeployment(id, btn);
         }
       });
     }
@@ -907,6 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
       deploymentsTbody.innerHTML = deployments.map(d => {
         const isRunning = d.status === 'RUNNING';
         const isFailed = d.status === 'FAILED';
+        const isStopped = d.status === 'STOPPED';
 
         return `
           <tr>
@@ -923,9 +926,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="badge badge-status-failed clickable-badge" data-action="view-failure" data-id="${escapeHTML(d.id)}" title="Click to view failure details">
                   FAILED ⚠️
                 </span>
+              ` : (isStopped ? `
+                <span class="badge badge-status-failed" style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3)">
+                  STOPPED ■
+                </span>
               ` : `
                 <span class="badge badge-status-success">${escapeHTML(d.status)}</span>
-              `)}
+              `))}
             </td>
             <td style="font-weight:700; color:white;">${escapeHTML(d.projectName || d.projectId)}</td>
             <td><span style="font-family:var(--font-mono); color:var(--accent-indigo);">${escapeHTML(d.repository)}</span></td>
@@ -949,6 +956,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${isFailed ? `
                   <button type="button" class="btn btn-xs btn-danger-outline" data-action="view-failure" data-id="${escapeHTML(d.id)}" title="Click to view error diagnosis">
                     Why Failed?
+                  </button>
+                ` : ''}
+                ${isRunning ? `
+                  <button type="button" class="btn btn-xs btn-danger-outline" data-action="stop-deployment" data-id="${escapeHTML(d.id)}" title="Stop this deployment">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="6" y="6" width="12" height="12" rx="1"></rect>
+                    </svg>
+                    Stop
                   </button>
                 ` : ''}
               </div>
@@ -1207,6 +1222,40 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.deployment && data.deployment.id) {
         setTimeout(() => openTerminalModal(data.deployment.id), 400);
       }
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      if (buttonEl) {
+        buttonEl.disabled = false;
+        buttonEl.innerHTML = origHTML;
+      }
+    }
+  }
+
+  async function stopDeployment(depId, buttonEl = null) {
+    if (!confirm('Are you sure you want to stop this running deployment?')) return;
+
+    let origHTML = '';
+    if (buttonEl) {
+      origHTML = buttonEl.innerHTML;
+      buttonEl.disabled = true;
+      buttonEl.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        Stopping...
+      `;
+    }
+
+    try {
+      const res = await fetch(`/api/deployments/${encodeURIComponent(depId)}/stop`, { method: 'POST' });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to stop deployment');
+      }
+      showToast('Deployment stopped successfully!');
+      await fetchDeployments();
     } catch (err) {
       showToast(err.message, true);
     } finally {
