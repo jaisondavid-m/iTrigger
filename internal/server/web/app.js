@@ -232,13 +232,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (projectForm) projectForm.addEventListener('submit', saveProject);
 
     if (btnGenerateSecret) {
-      btnGenerateSecret.addEventListener('click', () => {
-        const array = new Uint8Array(20);
-        window.crypto.getRandomValues(array);
-        const secret = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-        if (projectSecret) {
-          projectSecret.value = secret;
-          showToast('Generated secure random secret!');
+      btnGenerateSecret.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          let secret = '';
+          if (window.crypto && window.crypto.getRandomValues) {
+            const array = new Uint8Array(20);
+            window.crypto.getRandomValues(array);
+            secret = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+          } else {
+            // Fallback for non-secure contexts / older browsers
+            for (let i = 0; i < 40; i++) {
+              secret += Math.floor(Math.random() * 16).toString(16);
+            }
+          }
+          if (projectSecret) {
+            projectSecret.value = secret;
+            showToast('Generated secure random secret!');
+          }
+        } catch (err) {
+          console.error('Failed to generate secret:', err);
+          showToast('Failed to generate secret. Please enter one manually.', true);
         }
       });
     }
