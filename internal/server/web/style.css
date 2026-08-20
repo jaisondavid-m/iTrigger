@@ -97,8 +97,8 @@ body {
 }
 
 .brand-logo {
-  width: 46px;
-  height: 46px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -115,21 +115,7 @@ body {
   border-radius: var(--radius-md);
 }
 
-.logo-glow {
-  position: absolute;
-  top: -4px; left: -4px; right: -4px; bottom: -4px;
-  background: linear-gradient(135deg, var(--accent-indigo), var(--accent-violet));
-  border-radius: var(--radius-md);
-  filter: blur(10px);
-  opacity: 0.5;
-  z-index: 1;
-  animation: pulse-glow 3s infinite alternate;
-}
 
-@keyframes pulse-glow {
-  0% { opacity: 0.3; transform: scale(0.95); }
-  100% { opacity: 0.7; transform: scale(1.05); }
-}
 
 .brand-text {
   display: flex;
