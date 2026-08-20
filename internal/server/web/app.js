@@ -18,10 +18,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchInput = document.getElementById('searchInput');
   const eventFilter = document.getElementById('eventFilter');
 
-  // Navigation Tabs
-  const navTabs = document.getElementById('navTabs');
-  const tabBtns = document.querySelectorAll('.tab-btn');
+  // Sidebar Layout Navigation
+  const sidebarNav = document.getElementById('sidebarNav');
+  const navLinks = document.querySelectorAll('.nav-link');
   const tabContents = document.querySelectorAll('.tab-content');
+  const viewTitle = document.getElementById('viewTitle');
+
+  // Mobile Sidebar Elements
+  const btnMenu = document.getElementById('btnMenu');
+  const appSidebar = document.getElementById('appSidebar');
+  const sidebarOverlayBackdrop = document.getElementById('sidebarOverlayBackdrop');
+  
+  // Logout Sidebar Button
+  const btnLogoutSidebar = document.getElementById('btnLogoutSidebar');
 
   // Stats Elements
   const statProjects = document.getElementById('statProjects');
@@ -254,19 +263,56 @@ document.addEventListener('DOMContentLoaded', () => {
       btnScriptModeCustom.addEventListener('click', () => setScriptMode('custom'));
     }
 
-    // 1. Tab Switching
-    if (navTabs) {
-      navTabs.addEventListener('click', (e) => {
-        const btn = e.target.closest('.tab-btn');
-        if (!btn) return;
-        const targetTab = btn.getAttribute('data-tab');
+    // 1. Sidebar Page Switching
+    if (sidebarNav) {
+      sidebarNav.addEventListener('click', (e) => {
+        const link = e.target.closest('.nav-link');
+        if (!link) return;
+        const targetTab = link.getAttribute('data-tab');
         
-        tabBtns.forEach(b => b.classList.remove('active'));
+        navLinks.forEach(b => b.classList.remove('active'));
         tabContents.forEach(c => c.classList.remove('active'));
 
-        btn.classList.add('active');
+        link.classList.add('active');
         const contentEl = document.getElementById(targetTab);
         if (contentEl) contentEl.classList.add('active');
+
+        // Update header view title
+        if (viewTitle) {
+          const spanText = link.querySelector('span').textContent;
+          if (spanText === 'Projects') {
+            viewTitle.textContent = 'Projects Dashboard';
+          } else if (spanText === 'Deployment Logs') {
+            viewTitle.textContent = 'System Logs';
+          } else if (spanText === 'Webhook Payloads') {
+            viewTitle.textContent = 'Webhook Payloads';
+          } else if (spanText === 'Settings') {
+            viewTitle.textContent = 'Account Settings';
+          } else {
+            viewTitle.textContent = spanText;
+          }
+        }
+
+        // Close mobile sidebar on select
+        if (appSidebar && appSidebar.classList.contains('open')) {
+          appSidebar.classList.remove('open');
+          if (sidebarOverlayBackdrop) sidebarOverlayBackdrop.classList.add('hidden');
+        }
+      });
+    }
+
+    // Mobile Hamburger Menu Toggles
+    if (btnMenu) {
+      btnMenu.addEventListener('click', () => {
+        if (appSidebar) appSidebar.classList.toggle('open');
+        if (sidebarOverlayBackdrop) sidebarOverlayBackdrop.classList.toggle('hidden');
+      });
+    }
+
+    if (sidebarOverlayBackdrop) {
+      sidebarOverlayBackdrop.addEventListener('click', () => {
+        if (appSidebar) appSidebar.classList.remove('open');
+        sidebarOverlayBackdrop.classList.add('hidden');
       });
     }
 
@@ -371,6 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loginForm) loginForm.addEventListener('submit', handleLogin);
     if (settingsForm) settingsForm.addEventListener('submit', handleSaveSettings);
     if (btnLogout) btnLogout.addEventListener('click', handleLogout);
+    if (btnLogoutSidebar) btnLogoutSidebar.addEventListener('click', handleLogout);
 
     if (btnGenerateSecret) {
       console.log("[iTrigger] btnGenerateSecret found. Attaching click listener.");
