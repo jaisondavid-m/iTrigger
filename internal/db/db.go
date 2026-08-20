@@ -41,6 +41,10 @@ func InitDB(dbPath string) (*sql.DB, error) {
 		return nil, err
 	}
 
+	// Schema migration for existing databases: add columns if they do not exist
+	_, _ = db.Exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+	_, _ = db.Exec("ALTER TABLE users ADD COLUMN can_create_project INTEGER NOT NULL DEFAULT 1")
+
 	// Initialize default user if users table is empty
 	var count int
 	err = db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
@@ -56,14 +60,17 @@ func InitDB(dbPath string) (*sql.DB, error) {
 		}
 		now := time.Now()
 		_, err = db.Exec(`
-			INSERT INTO users (username, password_hash, created_at, updated_at)
-			VALUES (?, ?, ?, ?)
+			INSERT INTO users (username, password_hash, is_admin, can_create_project, created_at, updated_at)
+			VALUES (?, ?, 1, 1, ?, ?)
 		`, "itrigger", string(hashed), now, now)
 		if err != nil {
 			db.Close()
 			return nil, fmt.Errorf("failed to insert default user: %w", err)
 		}
-		log.Println("[DB] Successfully initialized default user 'itrigger' with password 'itrigger'")
+		log.Println("[DB] Successfully initialized default user 'itrigger' with password 'itrigger' as Administrator")
+	} else {
+		// Ensure the default user is promoted to admin if it already exists
+		_, _ = db.Exec("UPDATE users SET is_admin = 1, can_create_project = 1 WHERE username = 'itrigger'")
 	}
 
 	if err := migrateLegacyJSON(db, dataDir); err != nil {
@@ -119,8 +126,19 @@ func createTables(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS users (
 		username TEXT PRIMARY KEY,
 		password_hash TEXT NOT NULL,
+		is_admin INTEGER NOT NULL DEFAULT 0,
+		can_create_project INTEGER NOT NULL DEFAULT 1,
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS user_project_permissions (
+		username TEXT NOT NULL,
+		project_id TEXT NOT NULL,
+		permission TEXT NOT NULL, -- "read" or "write"
+		PRIMARY KEY (username, project_id),
+		FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE,
+		FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_deployments_project_id ON deployments(project_id);

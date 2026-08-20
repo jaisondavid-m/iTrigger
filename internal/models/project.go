@@ -4,16 +4,17 @@ import "time"
 
 // ProjectConfig defines a target repository deployment configuration.
 type ProjectConfig struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Repository  string    `json:"repository"`  // e.g. "owner/repo" or "repo"
-	Branch      string    `json:"branch"`      // e.g. "main" or "master"
-	ProjectPath string    `json:"projectPath"` // Server filesystem path e.g. "/my/project"
-	Script      string    `json:"script"`      // Shell commands e.g. "git pull origin main\ndocker compose up --build -d"
-	Secret      string    `json:"secret"`      // Optional per-project webhook secret override
-	Enabled     bool      `json:"enabled"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Repository     string    `json:"repository"`  // e.g. "owner/repo" or "repo"
+	Branch         string    `json:"branch"`      // e.g. "main" or "master"
+	ProjectPath    string    `json:"projectPath"` // Server filesystem path e.g. "/my/project"
+	Script         string    `json:"script"`      // Shell commands e.g. "git pull origin main\ndocker compose up --build -d"
+	Secret         string    `json:"secret"`      // Optional per-project webhook secret override
+	Enabled        bool      `json:"enabled"`
+	UserPermission string    `json:"userPermission,omitempty"` // User permission level: "read", "write"
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 // DeploymentLog records details and output of a deployment execution.

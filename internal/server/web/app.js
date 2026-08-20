@@ -130,6 +130,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   let currentUser = null;
+  let currentUserIsAdmin = false;
+  let currentUserCanCreateProject = false;
+  let usersList = [];
 
   async function checkAuth() {
     try {
@@ -138,12 +141,40 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       if (data.authenticated) {
         currentUser = data.username;
+        currentUserIsAdmin = data.isAdmin || false;
+        currentUserCanCreateProject = data.canCreateProject || false;
+
         if (loginOverlay) loginOverlay.classList.add('hidden');
         if (appContainer) appContainer.classList.remove('hidden');
         
         // Update newUsername field in Settings form
         const newUsernameEl = document.getElementById('newUsername');
         if (newUsernameEl) newUsernameEl.value = currentUser;
+
+        // Toggle UI elements based on permissions
+        const navWebhooks = document.querySelector('button[data-tab="webhooksTab"]');
+        if (navWebhooks) {
+          if (currentUserIsAdmin) navWebhooks.classList.remove('hidden');
+          else navWebhooks.classList.add('hidden');
+        }
+        
+        const navUsers = document.getElementById('navUsers');
+        if (navUsers) {
+          if (currentUserIsAdmin) navUsers.classList.remove('hidden');
+          else navUsers.classList.add('hidden');
+        }
+        
+        const btnNewProject = document.getElementById('btnNewProject');
+        if (btnNewProject) {
+          if (currentUserIsAdmin || currentUserCanCreateProject) btnNewProject.classList.remove('hidden');
+          else btnNewProject.classList.add('hidden');
+        }
+
+        const btnBrowsePath = document.getElementById('btnBrowsePath');
+        if (btnBrowsePath) {
+          if (currentUserIsAdmin) btnBrowsePath.classList.remove('hidden');
+          else btnBrowsePath.classList.add('hidden');
+        }
         
         return true;
       } else {
@@ -151,6 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       currentUser = null;
+      currentUserIsAdmin = false;
+      currentUserCanCreateProject = false;
       if (loginOverlay) loginOverlay.classList.remove('hidden');
       if (appContainer) appContainer.classList.add('hidden');
       stopAutoRefresh();
@@ -288,9 +321,15 @@ document.addEventListener('DOMContentLoaded', () => {
             viewTitle.textContent = 'Webhook Payloads';
           } else if (spanText === 'Settings') {
             viewTitle.textContent = 'Account Settings';
+          } else if (spanText === 'Users') {
+            viewTitle.textContent = 'User Management';
           } else {
             viewTitle.textContent = spanText;
           }
+        }
+
+        if (targetTab === 'usersTab') {
+          fetchUsers();
         }
 
         // Close mobile sidebar on select
@@ -581,6 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.target === projectModal) closeProjectModal();
       if (e.target === terminalModal) closeTerminalModal();
       if (e.target === failureModal) closeFailureModal();
+      if (e.target === userModal) closeUserModal();
     });
 
     window.addEventListener('keydown', (e) => {
@@ -588,8 +628,42 @@ document.addEventListener('DOMContentLoaded', () => {
         closeProjectModal();
         closeTerminalModal();
         closeFailureModal();
+        closeUserModal();
       }
     });
+
+    // User modal buttons and form submit
+    const btnNewUser = document.getElementById('btnNewUser');
+    if (btnNewUser) {
+      btnNewUser.addEventListener('click', () => openUserModal());
+    }
+    const btnCancelUserModal = document.getElementById('btnCancelUserModal');
+    if (btnCancelUserModal) {
+      btnCancelUserModal.addEventListener('click', closeUserModal);
+    }
+    const btnCloseUserModal = document.getElementById('btnCloseUserModal');
+    if (btnCloseUserModal) {
+      btnCloseUserModal.addEventListener('click', closeUserModal);
+    }
+    const userForm = document.getElementById('userForm');
+    if (userForm) {
+      userForm.addEventListener('submit', saveUser);
+    }
+    const usersTbody = document.getElementById('usersTbody');
+    if (usersTbody) {
+      usersTbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (!btn) return;
+        const action = btn.getAttribute('data-user-action');
+        const uName = btn.getAttribute('data-username');
+        if (action === 'edit') {
+          const u = usersList.find(usr => usr.username === uName);
+          if (u) openUserModal(u);
+        } else if (action === 'delete') {
+          deleteUser(uName);
+        }
+      });
+    }
   }
 
   function setScriptMode(mode) {
@@ -641,11 +715,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- Data Fetching ---
   async function fetchAllData(silent = false) {
-    await Promise.all([
+    const promises = [
       fetchProjects(silent),
-      fetchDeployments(silent),
-      fetchWebhooks(silent)
-    ]);
+      fetchDeployments(silent)
+    ];
+    if (currentUserIsAdmin) {
+      promises.push(fetchWebhooks(silent));
+    }
+    await Promise.all(promises);
   }
 
   async function fetchProjects(silent = false) {
@@ -711,6 +788,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (projectsGrid) {
       projectsGrid.innerHTML = projects.map(p => {
         const hasCustomScript = p.script && p.script.trim().length > 0 && !p.script.startsWith('# Auto-detect');
+        const isRead = p.userPermission === 'read';
         return `
           <div class="project-card" data-project-id="${escapeHTML(p.id)}">
             <div class="project-card-header">
@@ -723,9 +801,12 @@ document.addEventListener('DOMContentLoaded', () => {
                   ${escapeHTML(p.repository)}
                 </span>
               </div>
-              <span class="badge ${p.enabled ? 'badge-status-success' : 'badge-status-failed'}">
-                ${p.enabled ? 'Enabled' : 'Disabled'}
-              </span>
+              <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <span class="badge ${p.enabled ? 'badge-status-success' : 'badge-status-failed'}">
+                  ${p.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+                ${isRead ? `<span class="badge badge-status-failed" style="background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.3)">Read-Only</span>` : ''}
+              </div>
             </div>
 
             <div class="project-details">
@@ -766,6 +847,7 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             </div>
 
+            ${isRead ? '' : `
             <div class="project-card-footer">
               <div class="project-actions">
                 <button type="button" class="btn btn-xs btn-secondary" data-action="edit-project" data-id="${escapeHTML(p.id)}">
@@ -790,6 +872,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span>Deploy Now</span>
               </button>
             </div>
+            `}
           </div>
         `;
       }).join('');
@@ -1390,5 +1473,235 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  // --- User Management Client Handlers ---
+  const userModal = document.getElementById('userModal');
+  const userForm = document.getElementById('userForm');
+  const userIsAdminCheckbox = document.getElementById('userIsAdmin');
+  const projectPermissionsGroup = document.getElementById('projectPermissionsGroup');
+  const userCanCreateProjectRow = document.getElementById('userCanCreateProjectRow');
+  const modalProjectPermissionsTbody = document.getElementById('modalProjectPermissionsTbody');
+
+  function openUserModal(user = null) {
+    const titleEl = document.getElementById('modalUserTitle');
+    const usernameInput = document.getElementById('userUsername');
+    const passwordInput = document.getElementById('userPassword');
+    const passwordReq = document.getElementById('userPasswordReq');
+    const passwordHelp = document.getElementById('userPasswordHelp');
+
+    if (user) {
+      if (titleEl) titleEl.textContent = 'Edit User Account';
+      if (usernameInput) {
+        usernameInput.value = user.username;
+        usernameInput.disabled = true;
+      }
+      if (passwordInput) {
+        passwordInput.value = '';
+        passwordInput.required = false;
+      }
+      if (passwordReq) passwordReq.style.display = 'none';
+      if (passwordHelp) passwordHelp.style.display = 'inline';
+      if (userIsAdminCheckbox) userIsAdminCheckbox.checked = user.isAdmin;
+      const uCanCreate = document.getElementById('userCanCreateProject');
+      if (uCanCreate) uCanCreate.checked = user.canCreateProject;
+    } else {
+      if (titleEl) titleEl.textContent = 'Add User Account';
+      if (usernameInput) {
+        usernameInput.value = '';
+        usernameInput.disabled = false;
+      }
+      if (passwordInput) {
+        passwordInput.value = '';
+        passwordInput.required = true;
+      }
+      if (passwordReq) passwordReq.style.display = 'inline';
+      if (passwordHelp) passwordHelp.style.display = 'none';
+      if (userIsAdminCheckbox) userIsAdminCheckbox.checked = false;
+      const uCanCreate = document.getElementById('userCanCreateProject');
+      if (uCanCreate) uCanCreate.checked = true;
+    }
+
+    if (modalProjectPermissionsTbody) {
+      modalProjectPermissionsTbody.innerHTML = projects.map(p => {
+        let currentVal = 'none';
+        if (user && user.permissions && user.permissions[p.id]) {
+          currentVal = user.permissions[p.id];
+        }
+        return `
+          <tr>
+            <td>${escapeHTML(p.name)}</td>
+            <td>
+              <select class="form-input project-perm-select" data-project-id="${escapeHTML(p.id)}" style="padding: 0.35rem 0.5rem; font-size: 0.8rem; background: var(--bg-input);">
+                <option value="none" ${currentVal === 'none' ? 'selected' : ''}>No Access</option>
+                <option value="read" ${currentVal === 'read' ? 'selected' : ''}>Read-Only</option>
+                <option value="write" ${currentVal === 'write' ? 'selected' : ''}>Write / Trigger</option>
+              </select>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    togglePermissionsGroupVisibility();
+
+    if (userModal) userModal.classList.remove('hidden');
+  }
+
+  function togglePermissionsGroupVisibility() {
+    const isAdmin = userIsAdminCheckbox && userIsAdminCheckbox.checked;
+    if (isAdmin) {
+      if (projectPermissionsGroup) projectPermissionsGroup.classList.add('hidden');
+      if (userCanCreateProjectRow) userCanCreateProjectRow.classList.add('hidden');
+    } else {
+      if (projectPermissionsGroup) projectPermissionsGroup.classList.remove('hidden');
+      if (userCanCreateProjectRow) userCanCreateProjectRow.classList.remove('hidden');
+    }
+  }
+
+  if (userIsAdminCheckbox) {
+    userIsAdminCheckbox.addEventListener('change', togglePermissionsGroupVisibility);
+  }
+
+  function closeUserModal() {
+    if (userModal) userModal.classList.add('hidden');
+    if (userForm) userForm.reset();
+  }
+
+  async function fetchUsers() {
+    try {
+      const res = await fetch('/api/users');
+      if (!res.ok) throw new Error('Failed to fetch users');
+      const data = await res.json();
+      usersList = data;
+      renderUsers();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  function renderUsers() {
+    const usersTbody = document.getElementById('usersTbody');
+    if (!usersTbody) return;
+    if (usersList.length === 0) {
+      usersTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding: 2rem;">No user accounts found.</td></tr>`;
+      return;
+    }
+
+    usersTbody.innerHTML = usersList.map(u => {
+      const isSelf = u.username === currentUser;
+      const isDefaultAdmin = u.username === 'itrigger';
+      
+      let projectsAccessText = '';
+      if (u.isAdmin) {
+        projectsAccessText = '<span style="color:var(--accent-indigo); font-weight:700;">Administrator (All Projects)</span>';
+      } else {
+        const list = [];
+        for (const [projId, perm] of Object.entries(u.permissions)) {
+          const p = projects.find(proj => proj.id === projId);
+          if (p) {
+            const permLabel = perm === 'write' ? 'Write' : 'Read';
+            const color = perm === 'write' ? 'var(--accent-emerald)' : 'var(--text-secondary)';
+            list.push(`<span style="color:${color}">${escapeHTML(p.name)} (${permLabel})</span>`);
+          }
+        }
+        projectsAccessText = list.length > 0 ? list.join(', ') : '<span style="color:var(--text-muted); font-style:italic;">No project access</span>';
+      }
+
+      return `
+        <tr>
+          <td style="font-weight:600;">${escapeHTML(u.username)} ${isSelf ? ' <span style="font-weight:normal; font-size:0.75rem; color:var(--text-muted); font-style:italic;">(you)</span>' : ''}</td>
+          <td>
+            <span class="badge ${u.isAdmin ? 'badge-status-success' : 'badge-status-failed'}" style="${u.isAdmin ? 'background:rgba(99,102,241,0.15); color:var(--accent-indigo); border:1px solid rgba(99,102,241,0.3)' : ''}">
+              ${u.isAdmin ? 'Admin' : 'User'}
+            </span>
+          </td>
+          <td>
+            <span class="badge ${u.canCreateProject && !u.isAdmin ? 'badge-status-success' : 'badge-status-failed'}">
+              ${u.isAdmin || u.canCreateProject ? 'Yes' : 'No'}
+            </span>
+          </td>
+          <td style="max-width:350px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${projectsAccessText.replace(/<[^>]*>/g, '')}">
+            ${projectsAccessText}
+          </td>
+          <td class="time-stamp">${formatTime(u.createdAt)}</td>
+          <td style="text-align: right;">
+            <button type="button" class="btn btn-xs btn-secondary" data-user-action="edit" data-username="${escapeHTML(u.username)}">Edit</button>
+            <button type="button" class="btn btn-xs btn-danger-outline" data-user-action="delete" data-username="${escapeHTML(u.username)}" ${isSelf || isDefaultAdmin ? 'disabled' : ''}>Delete</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async function saveUser(e) {
+    e.preventDefault();
+    const username = document.getElementById('userUsername').value;
+    const isEdit = document.getElementById('userUsername').disabled;
+    const password = document.getElementById('userPassword').value;
+    const isAdmin = document.getElementById('userIsAdmin').checked;
+    const canCreateProject = document.getElementById('userCanCreateProject').checked;
+
+    const permissions = {};
+    if (!isAdmin && modalProjectPermissionsTbody) {
+      const selects = modalProjectPermissionsTbody.querySelectorAll('.project-perm-select');
+      selects.forEach(sel => {
+        const projId = sel.getAttribute('data-project-id');
+        const val = sel.value;
+        if (val !== 'none') {
+          permissions[projId] = val;
+        }
+      });
+    }
+
+    const body = {
+      isAdmin,
+      canCreateProject,
+      permissions
+    };
+    if (!isEdit) {
+      body.username = username;
+      body.password = password;
+    } else if (password !== '') {
+      body.password = password;
+    }
+
+    try {
+      const url = isEdit ? `/api/users/${encodeURIComponent(username)}` : '/api/users';
+      const method = isEdit ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to save user account');
+      }
+
+      showToast(isEdit ? 'User updated successfully!' : 'User created successfully!');
+      closeUserModal();
+      fetchUsers();
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  }
+
+  async function deleteUser(username) {
+    if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+    try {
+      const res = await fetch(`/api/users/${encodeURIComponent(username)}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(errText || 'Failed to delete user account');
+      }
+      showToast('User deleted successfully!');
+      fetchUsers();
+    } catch (err) {
+      showToast(err.message, true);
+    }
   }
 });

@@ -41,7 +41,8 @@ func (ah *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	password := req.Password
 
 	var hash string
-	err := ah.db.QueryRow("SELECT password_hash FROM users WHERE username = ?", username).Scan(&hash)
+	var isAdmin, canCreateProject int
+	err := ah.db.QueryRow("SELECT password_hash, is_admin, can_create_project FROM users WHERE username = ?", username).Scan(&hash, &isAdmin, &canCreateProject)
 	if err == sql.ErrNoRows {
 		http.Error(w, "invalid username or password", http.StatusUnauthorized)
 		return
@@ -68,8 +69,10 @@ func (ah *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":   "success",
-		"username": username,
+		"status":           "success",
+		"username":         username,
+		"isAdmin":          isAdmin == 1,
+		"canCreateProject": canCreateProject == 1,
 	})
 }
 
@@ -117,10 +120,20 @@ func (ah *AuthHandler) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var isAdmin, canCreateProject int
+	err = ah.db.QueryRow("SELECT is_admin, can_create_project FROM users WHERE username = ?", username).Scan(&isAdmin, &canCreateProject)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": false})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"authenticated": true,
-		"username":      username,
+		"authenticated":    true,
+		"username":         username,
+		"isAdmin":          isAdmin == 1,
+		"canCreateProject": canCreateProject == 1,
 	})
 }
 

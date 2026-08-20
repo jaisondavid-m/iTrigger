@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -49,17 +50,46 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 	mux.HandleFunc("/api/auth/status", authHandler.Status)
 	mux.HandleFunc("/api/auth/settings", authHandler.UpdateSettings)
 
+	// User Management API endpoints (Admin only)
+	userHandler := auth.NewUserHandler(database, sessionStore)
+	mux.HandleFunc("/api/users", RequireAdmin(sessionStore, database, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			userHandler.List(w, r)
+		case http.MethodPost:
+			userHandler.Create(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+	mux.HandleFunc("/api/users/", RequireAdmin(sessionStore, database, func(w http.ResponseWriter, r *http.Request) {
+		username := strings.TrimPrefix(r.URL.Path, "/api/users/")
+		username = strings.Trim(username, "/")
+		if username == "" {
+			http.Error(w, "username required", http.StatusBadRequest)
+			return
+		}
+		switch r.Method {
+		case http.MethodPut, http.MethodPost:
+			userHandler.Update(w, r, username)
+		case http.MethodDelete:
+			userHandler.Delete(w, r, username)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
 	// Health check endpoints
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/healthz", healthHandler)
 
 	// Webhook API endpoints
 	mux.Handle("/api/webhooks/github", webhookHandler)
-	mux.HandleFunc("/api/webhooks", RequireAuth(sessionStore, webhookHandler.GetEventsHandler))
-	mux.HandleFunc("/api/webhooks/clear", RequireAuth(sessionStore, webhookHandler.ClearEventsHandler))
+	mux.HandleFunc("/api/webhooks", RequireAdmin(sessionStore, database, webhookHandler.GetEventsHandler))
+	mux.HandleFunc("/api/webhooks/clear", RequireAdmin(sessionStore, database, webhookHandler.ClearEventsHandler))
 
 	// Backup endpoint
-	mux.HandleFunc("/api/backups", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/backups", RequireAdmin(sessionStore, database, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -76,7 +106,7 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 	}))
 
 	// Server Filesystem Directory Browser API
-	mux.HandleFunc("/api/fs/browse", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/fs/browse", RequireAdmin(sessionStore, database, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -212,14 +242,56 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 
 	// Project Management API endpoints
 	mux.HandleFunc("/api/projects", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
+		username, _ := getUsername(r, sessionStore)
+		var isAdmin int
+		_ = database.QueryRow("SELECT is_admin FROM users WHERE username = ?", username).Scan(&isAdmin)
+
 		switch r.Method {
 		case http.MethodGet:
 			projects := projectStore.GetAll()
+			var filtered []models.ProjectConfig
+
+			if isAdmin == 1 {
+				for _, p := range projects {
+					p.UserPermission = "write"
+					filtered = append(filtered, p)
+				}
+			} else {
+				rowsPerm, err := database.Query("SELECT project_id, permission FROM user_project_permissions WHERE username = ?", username)
+				if err != nil {
+					http.Error(w, "database error", http.StatusInternalServerError)
+					return
+				}
+				defer rowsPerm.Close()
+
+				userPerms := make(map[string]string)
+				for rowsPerm.Next() {
+					var pID, perm string
+					if err := rowsPerm.Scan(&pID, &perm); err == nil {
+						userPerms[pID] = perm
+					}
+				}
+
+				for _, p := range projects {
+					if perm, exists := userPerms[p.ID]; exists {
+						p.UserPermission = perm
+						filtered = append(filtered, p)
+					}
+				}
+			}
+
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status":   "success",
-				"projects": projects,
+				"projects": filtered,
 			})
 		case http.MethodPost:
+			var canCreate int
+			err = database.QueryRow("SELECT can_create_project FROM users WHERE username = ?", username).Scan(&canCreate)
+			if err != nil || (isAdmin != 1 && canCreate != 1) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+
 			var req models.CreateProjectRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -230,6 +302,12 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+
+			// Non-admin creators get write permission by default
+			if isAdmin != 1 {
+				_, _ = database.Exec("INSERT OR REPLACE INTO user_project_permissions (username, project_id, permission) VALUES (?, ?, 'write')", username, proj.ID)
+			}
+
 			writeJSON(w, http.StatusCreated, map[string]any{
 				"status":  "success",
 				"project": proj,
@@ -240,6 +318,10 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 	}))
 
 	mux.HandleFunc("/api/projects/", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
+		username, _ := getUsername(r, sessionStore)
+		var isAdmin int
+		_ = database.QueryRow("SELECT is_admin FROM users WHERE username = ?", username).Scan(&isAdmin)
+
 		path := strings.TrimPrefix(r.URL.Path, "/api/projects/")
 		parts := strings.Split(strings.Trim(path, "/"), "/")
 		if len(parts) == 0 || parts[0] == "" {
@@ -260,6 +342,17 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				http.Error(w, "project not found", http.StatusNotFound)
 				return
 			}
+
+			// Validate write permission
+			if isAdmin != 1 {
+				var perm string
+				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, projectID).Scan(&perm)
+				if err != nil || perm != "write" {
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+
 			depLog := runner.TriggerDeployment(proj, "manual:ui", "HEAD", "Manual trigger from UI")
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status":     "triggered",
@@ -276,11 +369,35 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				http.Error(w, "project not found", http.StatusNotFound)
 				return
 			}
+
+			// Validate read/write permission
+			var userPerm string
+			if isAdmin == 1 {
+				userPerm = "write"
+			} else {
+				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, projectID).Scan(&userPerm)
+				if err != nil {
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+			proj.UserPermission = userPerm
+
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status":  "success",
 				"project": proj,
 			})
 		case http.MethodPut, http.MethodPost:
+			// Validate write permission
+			if isAdmin != 1 {
+				var perm string
+				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, projectID).Scan(&perm)
+				if err != nil || perm != "write" {
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+
 			var req models.CreateProjectRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -296,6 +413,16 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				"project": proj,
 			})
 		case http.MethodDelete:
+			// Validate write permission
+			if isAdmin != 1 {
+				var perm string
+				err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, projectID).Scan(&perm)
+				if err != nil || perm != "write" {
+					http.Error(w, "forbidden", http.StatusForbidden)
+					return
+				}
+			}
+
 			if !projectStore.Delete(projectID) {
 				http.Error(w, "project not found", http.StatusNotFound)
 				return
@@ -314,11 +441,44 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		deployments := deploymentStore.GetAll()
+
+		username, _ := getUsername(r, sessionStore)
+		var isAdmin int
+		_ = database.QueryRow("SELECT is_admin FROM users WHERE username = ?", username).Scan(&isAdmin)
+
+		allDeployments := deploymentStore.GetAll()
+		var filtered []models.DeploymentLog
+
+		if isAdmin == 1 {
+			filtered = allDeployments
+		} else {
+			// Query projects this user has read or write permissions for
+			rowsPerm, err := database.Query("SELECT project_id FROM user_project_permissions WHERE username = ?", username)
+			if err != nil {
+				http.Error(w, "database error", http.StatusInternalServerError)
+				return
+			}
+			defer rowsPerm.Close()
+
+			userProjects := make(map[string]bool)
+			for rowsPerm.Next() {
+				var pID string
+				if err := rowsPerm.Scan(&pID); err == nil {
+					userProjects[pID] = true
+				}
+			}
+
+			for _, d := range allDeployments {
+				if userProjects[d.ProjectID] {
+					filtered = append(filtered, d)
+				}
+			}
+		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":      "success",
-			"count":       len(deployments),
-			"deployments": deployments,
+			"count":       len(filtered),
+			"deployments": filtered,
 		})
 	}))
 
@@ -331,9 +491,28 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 		subPath := strings.TrimPrefix(r.URL.Path, "/api/deployments/")
 		parts := strings.Split(strings.Trim(subPath, "/"), "/")
 
+		// Validate project access
+		depID := parts[0]
+		depLog, ok := deploymentStore.Get(depID)
+		if !ok {
+			http.Error(w, "deployment log not found", http.StatusNotFound)
+			return
+		}
+
+		username, _ := getUsername(r, sessionStore)
+		var isAdmin int
+		_ = database.QueryRow("SELECT is_admin FROM users WHERE username = ?", username).Scan(&isAdmin)
+		if isAdmin != 1 {
+			var perm string
+			err := database.QueryRow("SELECT permission FROM user_project_permissions WHERE username = ? AND project_id = ?", username, depLog.ProjectID).Scan(&perm)
+			if err != nil {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		}
+
 		// Handle /api/deployments/{id}/logs or /api/deployments/{id}/log
 		if len(parts) == 2 && (parts[1] == "logs" || parts[1] == "log") {
-			depID := parts[0]
 			reader, err := deploymentStore.GetLogStreamReader(depID)
 			if err != nil {
 				http.Error(w, "log file not found", http.StatusNotFound)
@@ -348,12 +527,6 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 		}
 
 		// Handle /api/deployments/{id}
-		depID := parts[0]
-		depLog, ok := deploymentStore.Get(depID)
-		if !ok {
-			http.Error(w, "deployment log not found", http.StatusNotFound)
-			return
-		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":     "success",
 			"deployment": depLog,
@@ -414,6 +587,36 @@ func RequireAuth(sessionStore *auth.SessionStore, next http.HandlerFunc) http.Ha
 		_, ok := sessionStore.Get(cookie.Value)
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func getUsername(r *http.Request, sessionStore *auth.SessionStore) (string, bool) {
+	cookie, err := r.Cookie("session_token")
+	if err != nil {
+		return "", false
+	}
+	return sessionStore.Get(cookie.Value)
+}
+
+func RequireAdmin(sessionStore *auth.SessionStore, db *sql.DB, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session_token")
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		username, ok := sessionStore.Get(cookie.Value)
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var isAdmin int
+		err = db.QueryRow("SELECT is_admin FROM users WHERE username = ?", username).Scan(&isAdmin)
+		if err != nil || isAdmin != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next(w, r)

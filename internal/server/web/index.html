@@ -65,6 +65,16 @@
           </svg>
           <span>Settings</span>
         </button>
+
+        <button class="nav-link hidden" data-tab="usersTab" id="navUsers">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <span>Users</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -364,6 +374,42 @@
           </div>
         </form>
       </div>
+    </section>
+
+    <!-- TAB 5: Users -->
+    <section id="usersTab" class="tab-content">
+      <div class="tab-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <div>
+          <h2>User Management</h2>
+          <p class="tab-desc">Create users, manage roles, and restrict project permissions.</p>
+        </div>
+        <button id="btnNewUser" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>Add User</span>
+        </button>
+      </div>
+
+      <div class="table-container" style="margin-top: 1.5rem;">
+        <table class="payload-table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Can Create Project</th>
+              <th>Project Permissions</th>
+              <th>Created At</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersTbody">
+            <!-- Rendered dynamically by app.js -->
+          </tbody>
+        </table>
+      </div>
+    </section>
       </div> <!-- main-content-scroll -->
     </div> <!-- app-main -->
   </div> <!-- app-layout -->
@@ -649,6 +695,75 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Add / Edit User -->
+  <div id="userModal" class="modal-overlay hidden" aria-hidden="true" role="dialog">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+            </svg>
+          </div>
+          <h3 id="modalUserTitle">Add User Account</h3>
+        </div>
+        <button type="button" class="btn-close" id="btnCloseUserModal" aria-label="Close modal">&times;</button>
+      </div>
+
+      <form id="userForm" class="modal-body">
+        <div class="form-group">
+          <label for="userUsername">Username <span class="req">*</span></label>
+          <input type="text" id="userUsername" class="form-input" placeholder="e.g. jason" required>
+        </div>
+
+        <div class="form-group">
+          <label for="userPassword">Password <span id="userPasswordReq" class="req">*</span> <span class="form-help-inline" id="userPasswordHelp">(leave blank to keep current when editing)</span></label>
+          <input type="password" id="userPassword" class="form-input" placeholder="Enter password" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="userIsAdmin">
+            <label for="userIsAdmin" class="checkbox-label">Is Admin (Full access to all projects, webhooks, users, backups)</label>
+          </div>
+        </div>
+
+        <div class="form-row" id="userCanCreateProjectRow">
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="userCanCreateProject" checked>
+            <label for="userCanCreateProject" class="checkbox-label">Can Create Projects</label>
+          </div>
+        </div>
+
+        <div class="form-group" id="projectPermissionsGroup">
+          <label>Project Access Permissions</label>
+          <div class="table-container" style="max-height: 250px; overflow-y: auto; background: rgba(0,0,0,0.15); border: 1px solid var(--border-color);">
+            <table class="payload-table" style="font-size: 0.82rem;">
+              <thead>
+                <tr>
+                  <th>Project Name</th>
+                  <th>Permission Level</th>
+                </tr>
+              </thead>
+              <tbody id="modalProjectPermissionsTbody">
+                <!-- Populated dynamically with project options -->
+              </tbody>
+            </table>
+          </div>
+          <small class="form-help">Specify access permissions for individual projects. If Is Admin is checked, these permissions are ignored.</small>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="btnCancelUserModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <span>Save User</span>
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 
