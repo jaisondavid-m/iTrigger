@@ -409,6 +409,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (action === 'edit-project') {
           editProject(id);
+        } else if (action === 'view-project-details') {
+          viewProjectDetails(id);
         } else if (action === 'delete-project') {
           deleteProject(id);
         } else if (action === 'deploy-project') {
@@ -847,32 +849,41 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             </div>
 
-            ${isRead ? '' : `
             <div class="project-card-footer">
-              <div class="project-actions">
-                <button type="button" class="btn btn-xs btn-secondary" data-action="edit-project" data-id="${escapeHTML(p.id)}">
+              ${isRead ? `
+                <button type="button" class="btn btn-xs btn-secondary" data-action="view-project-details" data-id="${escapeHTML(p.id)}" style="width:100%; justify-content:center;">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
                   </svg>
-                  Edit
+                  View Details
                 </button>
-                <button type="button" class="btn btn-xs btn-danger-outline" data-action="delete-project" data-id="${escapeHTML(p.id)}">
+              ` : `
+                <div class="project-actions">
+                  <button type="button" class="btn btn-xs btn-secondary" data-action="edit-project" data-id="${escapeHTML(p.id)}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                    </svg>
+                    Edit
+                  </button>
+                  <button type="button" class="btn btn-xs btn-danger-outline" data-action="delete-project" data-id="${escapeHTML(p.id)}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="3 6 5 6 21 6"></polyline>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    </svg>
+                    Delete
+                  </button>
+                </div>
+                <button type="button" class="btn btn-xs btn-success-outline" data-action="deploy-project" data-id="${escapeHTML(p.id)}">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"></polyline>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
-                  Delete
+                  <span>Deploy Now</span>
                 </button>
-              </div>
-              <button type="button" class="btn btn-xs btn-success-outline" data-action="deploy-project" data-id="${escapeHTML(p.id)}">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                </svg>
-                <span>Deploy Now</span>
-              </button>
+              `}
             </div>
-            `}
           </div>
         `;
       }).join('');
@@ -1022,10 +1033,16 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- Actions ---
   function editProject(id) {
     const proj = projects.find(p => p.id === id);
-    if (proj) openProjectModal(proj);
+    if (proj) openProjectModal(proj, false);
   }
 
-  function openProjectModal(proj = null) {
+  // Read-only project viewing
+  function viewProjectDetails(id) {
+    const proj = projects.find(p => p.id === id);
+    if (proj) openProjectModal(proj, true);
+  }
+
+  function openProjectModal(proj = null, isReadOnly = false) {
     document.getElementById('projectId').value = proj ? proj.id : '';
     document.getElementById('projectName').value = proj ? proj.name : '';
     document.getElementById('projectRepo').value = proj ? proj.repository : '';
@@ -1043,7 +1060,38 @@ document.addEventListener('DOMContentLoaded', () => {
       if (projectScript) projectScript.value = '';
     }
 
-    if (modalProjectTitle) modalProjectTitle.textContent = proj ? 'Edit Deployment Project' : 'Add Deployment Project';
+    // Toggle Read-Only fields
+    const inputs = [
+      document.getElementById('projectName'),
+      document.getElementById('projectRepo'),
+      document.getElementById('projectBranch'),
+      document.getElementById('projectPath'),
+      projectSecret,
+      projectScript,
+      document.getElementById('projectEnabled'),
+      document.getElementById('btnBrowsePath')
+    ];
+
+    inputs.forEach(input => {
+      if (input) input.disabled = isReadOnly;
+    });
+
+    if (btnScriptModeFile) btnScriptModeFile.disabled = isReadOnly;
+    if (btnScriptModeCustom) btnScriptModeCustom.disabled = isReadOnly;
+
+    const saveBtn = document.getElementById('btnSaveProject');
+    if (saveBtn) {
+      if (isReadOnly) saveBtn.classList.add('hidden');
+      else saveBtn.classList.remove('hidden');
+    }
+
+    if (modalProjectTitle) {
+      if (isReadOnly) {
+        modalProjectTitle.textContent = 'Project Configuration (Read-Only)';
+      } else {
+        modalProjectTitle.textContent = proj ? 'Edit Deployment Project' : 'Add Deployment Project';
+      }
+    }
     if (projectModal) projectModal.classList.remove('hidden');
   }
 

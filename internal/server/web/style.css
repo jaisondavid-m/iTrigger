@@ -1068,6 +1068,11 @@ input:checked + .slider:before {
   transition: all 0.2s;
 }
 
+select option {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
 .form-textarea {
   font-family: var(--font-mono);
   resize: vertical;
