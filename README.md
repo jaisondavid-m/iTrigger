@@ -65,13 +65,37 @@ Ideal for production staging.
    docker compose down
    ```
 
+## 🔐 Authentication & Access Control
+
+iTrigger includes built-in user authentication and role-based access control (RBAC) to secure your deployments.
+
+### Default Administrator Account
+Upon the first database initialization, iTrigger automatically creates a default administrator account:
+* **Username:** `itrigger`
+* **Password:** `itrigger`
+
+> [!IMPORTANT]
+> For security, log in immediately and update the password under the **Settings** tab.
+
+### Roles and Permissions
+Administrators can configure granular access controls for other users in the **Users** sidebar tab:
+1. **System Roles:**
+   - **Administrator:** Full system access (includes viewing webhook payload logs, managing user accounts, browsing the server filesystem, and performing backups).
+   - **User:** Restricted access. Can be restricted from creating new projects and can only view/manage projects explicitly assigned to them.
+2. **Project-Level Permissions:**
+   - **No Access:** The project is completely hidden from the user's dashboard.
+   - **Read-Only:** The user can see the project card and click **View Details** to inspect the configuration, but cannot edit settings, trigger deployments, or delete the project.
+   - **Write / Trigger:** The user can edit the project configuration and click **Deploy Now** to trigger deployments, but cannot delete the project.
+   - **Write / Trigger / Delete:** The user has full control over the project, including editing, deploying, and deleting it. *(Project creators automatically receive this level for their created projects).*
+
 ---
 
 ## ⚙️ How to Add a Project in the Dashboard UI
 
 1. Open your web browser and navigate to the iTrigger dashboard (e.g., `http://localhost:8080`).
-2. Click **Add Project** in the top right.
-3. Provide the project configuration:
+2. Log in using your credentials.
+3. Click **Add Project** in the top right (visible to admins or users allowed to create projects).
+4. Provide the project configuration:
    - **Project Display Name:** A unique label for the dashboard UI (e.g., `Core Web Application`).
    - **GitHub Repository:** The owner and repository name (e.g., `owner/repo-name` or `repo-name`).
    - **Target Branch:** The branch name to trigger deployments for (e.g., `main`).
