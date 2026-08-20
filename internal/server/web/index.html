@@ -8,10 +8,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
-  <div class="app-container">
+  <div class="app-container hidden" id="appContainer">
     <!-- Header -->
     <header class="app-header">
       <div class="header-brand">
@@ -622,7 +622,7 @@
   </div>
 
   <!-- Fullscreen Login Overlay -->
-  <div id="loginOverlay" class="login-overlay hidden">
+  <div id="loginOverlay" class="login-overlay">
     <div class="login-box">
       <div class="login-header">
         <div class="login-logo">
@@ -653,6 +653,6 @@
   <!-- Toast Alert Notification -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

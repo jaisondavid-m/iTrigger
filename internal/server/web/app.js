@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const loginForm = document.getElementById('loginForm');
   const settingsForm = document.getElementById('settingsForm');
   const btnLogout = document.getElementById('btnLogout');
+  const appContainer = document.getElementById('appContainer');
 
   // Modals & Script Mode Toggle
   const projectModal = document.getElementById('projectModal');
@@ -129,6 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.authenticated) {
         currentUser = data.username;
         if (loginOverlay) loginOverlay.classList.add('hidden');
+        if (appContainer) appContainer.classList.remove('hidden');
         
         // Update newUsername field in Settings form
         const newUsernameEl = document.getElementById('newUsername');
@@ -141,6 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (err) {
       currentUser = null;
       if (loginOverlay) loginOverlay.classList.remove('hidden');
+      if (appContainer) appContainer.classList.add('hidden');
       stopAutoRefresh();
       return false;
     }
