@@ -1993,6 +1993,32 @@ input:checked + .slider:before {
   color: var(--accent-indigo);
 }
 
+.nav-link .tab-badge {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-weight: 700;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.nav-link:hover .tab-badge {
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.nav-link.active .tab-badge {
+  background: rgba(99, 102, 241, 0.22);
+  color: var(--text-primary);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
 .sidebar-footer {
   margin-top: auto;
   display: flex;
