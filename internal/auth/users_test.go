@@ -162,24 +162,63 @@ func TestUserManagementCRUD(t *testing.T) {
 		t.Errorf("expected proj_2 permission to be deleted, found %d", proj2Count)
 	}
 
-	// 4. Test Delete User
-	reqDelete := httptest.NewRequest(http.MethodDelete, "/api/users/developer1", nil)
+	// 3.5 Test Rename Username
+	renameUserJSON := `{
+		"newUsername": "developer_renamed",
+		"isAdmin": false,
+		"canCreateProject": false,
+		"permissions": {
+			"proj_1": "read"
+		}
+	}`
+
+	reqRename := httptest.NewRequest(http.MethodPut, "/api/users/developer1", bytes.NewReader([]byte(renameUserJSON)))
+	recRename := httptest.NewRecorder()
+	handler.Update(recRename, reqRename, "developer1")
+
+	if recRename.Code != http.StatusOK {
+		t.Fatalf("expected status 200 for rename, got %d. Body: %s", recRename.Code, recRename.Body.String())
+	}
+
+	// Verify old username does not exist
+	var oldExists int
+	_ = db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'developer1'").Scan(&oldExists)
+	if oldExists != 0 {
+		t.Errorf("expected old username 'developer1' to be deleted/renamed")
+	}
+
+	// Verify new username exists
+	var newExists int
+	_ = db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'developer_renamed'").Scan(&newExists)
+	if newExists != 1 {
+		t.Errorf("expected new username 'developer_renamed' to exist")
+	}
+
+	// Verify permission owner updated to new username
+	var permUsername string
+	_ = db.QueryRow("SELECT username FROM user_project_permissions WHERE project_id = 'proj_1'").Scan(&permUsername)
+	if permUsername != "developer_renamed" {
+		t.Errorf("expected permissions to belong to 'developer_renamed', got %s", permUsername)
+	}
+
+	// 4. Test Delete User (renamed user)
+	reqDelete := httptest.NewRequest(http.MethodDelete, "/api/users/developer_renamed", nil)
 	reqDelete.AddCookie(&http.Cookie{Name: "session_token", Value: token})
 	recDelete := httptest.NewRecorder()
-	handler.Delete(recDelete, reqDelete, "developer1")
+	handler.Delete(recDelete, reqDelete, "developer_renamed")
 
 	if recDelete.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", recDelete.Code)
 	}
 
 	// Verify deletion
-	_ = db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'developer1'").Scan(&count)
+	_ = db.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'developer_renamed'").Scan(&count)
 	if count != 0 {
-		t.Errorf("expected user developer1 to be deleted")
+		t.Errorf("expected user developer_renamed to be deleted")
 	}
 
 	// Verify cascaded deletion of permissions
-	_ = db.QueryRow("SELECT COUNT(*) FROM user_project_permissions WHERE username = 'developer1'").Scan(&permCount)
+	_ = db.QueryRow("SELECT COUNT(*) FROM user_project_permissions WHERE username = 'developer_renamed'").Scan(&permCount)
 	if permCount != 0 {
 		t.Errorf("expected user permissions to be deleted, got %d", permCount)
 	}

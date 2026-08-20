@@ -176,6 +176,7 @@ func (uh *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 // PUT /api/users/{username}
 func (uh *UserHandler) Update(w http.ResponseWriter, r *http.Request, username string) {
 	var req struct {
+		NewUsername      string            `json:"newUsername"` // optional
 		Password         string            `json:"password"` // optional
 		IsAdmin          bool              `json:"isAdmin"`
 		CanCreateProject bool              `json:"canCreateProject"`
@@ -187,12 +188,31 @@ func (uh *UserHandler) Update(w http.ResponseWriter, r *http.Request, username s
 		return
 	}
 
+	newUsername := strings.TrimSpace(req.NewUsername)
+	if newUsername == "" {
+		newUsername = username
+	}
+
 	tx, err := uh.db.Begin()
 	if err != nil {
 		http.Error(w, "failed to begin transaction: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
+
+	// If changing username, check if new one exists
+	if newUsername != username {
+		var exists int
+		err := tx.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", newUsername).Scan(&exists)
+		if err != nil {
+			http.Error(w, "database error: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if exists > 0 {
+			http.Error(w, "new username already exists", http.StatusConflict)
+			return
+		}
+	}
 
 	isAdminVal := 0
 	if req.IsAdmin {
@@ -206,6 +226,9 @@ func (uh *UserHandler) Update(w http.ResponseWriter, r *http.Request, username s
 
 	now := time.Now()
 
+	// Temporarily disable foreign keys for username renaming safety
+	_, _ = tx.Exec("PRAGMA foreign_keys = OFF")
+
 	if req.Password != "" {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -214,9 +237,9 @@ func (uh *UserHandler) Update(w http.ResponseWriter, r *http.Request, username s
 		}
 		_, err = tx.Exec(`
 			UPDATE users
-			SET password_hash = ?, is_admin = ?, can_create_project = ?, updated_at = ?
+			SET username = ?, password_hash = ?, is_admin = ?, can_create_project = ?, updated_at = ?
 			WHERE username = ?
-		`, string(hashed), isAdminVal, canCreateVal, now, username)
+		`, newUsername, string(hashed), isAdminVal, canCreateVal, now, username)
 		if err != nil {
 			http.Error(w, "failed to update user: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -224,17 +247,26 @@ func (uh *UserHandler) Update(w http.ResponseWriter, r *http.Request, username s
 	} else {
 		_, err = tx.Exec(`
 			UPDATE users
-			SET is_admin = ?, can_create_project = ?, updated_at = ?
+			SET username = ?, is_admin = ?, can_create_project = ?, updated_at = ?
 			WHERE username = ?
-		`, isAdminVal, canCreateVal, now, username)
+		`, newUsername, isAdminVal, canCreateVal, now, username)
 		if err != nil {
 			http.Error(w, "failed to update user: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 
+	// Update permissions matching username (in case username changed)
+	if newUsername != username {
+		_, err = tx.Exec("UPDATE user_project_permissions SET username = ? WHERE username = ?", newUsername, username)
+		if err != nil {
+			http.Error(w, "failed to update permissions owner: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	// Recreate permissions: delete first
-	_, err = tx.Exec("DELETE FROM user_project_permissions WHERE username = ?", username)
+	_, err = tx.Exec("DELETE FROM user_project_permissions WHERE username = ?", newUsername)
 	if err != nil {
 		http.Error(w, "failed to clean permissions: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -247,7 +279,7 @@ func (uh *UserHandler) Update(w http.ResponseWriter, r *http.Request, username s
 				_, err = tx.Exec(`
 					INSERT INTO user_project_permissions (username, project_id, permission)
 					VALUES (?, ?, ?)
-				`, username, projectID, perm)
+				`, newUsername, projectID, perm)
 				if err != nil {
 					http.Error(w, "failed to save permission: "+err.Error(), http.StatusInternalServerError)
 					return
@@ -256,9 +288,17 @@ func (uh *UserHandler) Update(w http.ResponseWriter, r *http.Request, username s
 		}
 	}
 
+	// Restore foreign keys
+	_, _ = tx.Exec("PRAGMA foreign_keys = ON")
+
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "failed to commit transaction: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Update active sessions mapped to original username
+	if newUsername != username {
+		uh.sessionStore.UpdateUsername(username, newUsername)
 	}
 
 	w.WriteHeader(http.StatusOK)

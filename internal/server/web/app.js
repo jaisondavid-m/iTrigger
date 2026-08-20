@@ -1476,6 +1476,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- User Management Client Handlers ---
+  let currentEditingUsername = null;
   const userModal = document.getElementById('userModal');
   const userForm = document.getElementById('userForm');
   const userIsAdminCheckbox = document.getElementById('userIsAdmin');
@@ -1491,10 +1492,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const passwordHelp = document.getElementById('userPasswordHelp');
 
     if (user) {
+      currentEditingUsername = user.username;
       if (titleEl) titleEl.textContent = 'Edit User Account';
       if (usernameInput) {
         usernameInput.value = user.username;
-        usernameInput.disabled = true;
+        usernameInput.disabled = false; // Allow editing username
       }
       if (passwordInput) {
         passwordInput.value = '';
@@ -1506,6 +1508,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const uCanCreate = document.getElementById('userCanCreateProject');
       if (uCanCreate) uCanCreate.checked = user.canCreateProject;
     } else {
+      currentEditingUsername = null;
       if (titleEl) titleEl.textContent = 'Add User Account';
       if (usernameInput) {
         usernameInput.value = '';
@@ -1566,6 +1569,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeUserModal() {
     if (userModal) userModal.classList.add('hidden');
     if (userForm) userForm.reset();
+    currentEditingUsername = null;
   }
 
   async function fetchUsers() {
@@ -1637,7 +1641,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function saveUser(e) {
     e.preventDefault();
     const username = document.getElementById('userUsername').value;
-    const isEdit = document.getElementById('userUsername').disabled;
+    const isEdit = currentEditingUsername !== null;
     const password = document.getElementById('userPassword').value;
     const isAdmin = document.getElementById('userIsAdmin').checked;
     const canCreateProject = document.getElementById('userCanCreateProject').checked;
@@ -1662,12 +1666,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isEdit) {
       body.username = username;
       body.password = password;
-    } else if (password !== '') {
-      body.password = password;
+    } else {
+      body.newUsername = username;
+      if (password !== '') {
+        body.password = password;
+      }
     }
 
     try {
-      const url = isEdit ? `/api/users/${encodeURIComponent(username)}` : '/api/users';
+      const url = isEdit ? `/api/users/${encodeURIComponent(currentEditingUsername)}` : '/api/users';
       const method = isEdit ? 'PUT' : 'POST';
       const res = await fetch(url, {
         method,
@@ -1681,6 +1688,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       showToast(isEdit ? 'User updated successfully!' : 'User created successfully!');
+
+      // Update local context if renamed oneself
+      if (isEdit && currentEditingUsername === currentUser) {
+        currentUser = username;
+        const newUsernameEl = document.getElementById('newUsername');
+        if (newUsernameEl) newUsernameEl.value = currentUser;
+      }
+
       closeUserModal();
       fetchUsers();
     } catch (err) {

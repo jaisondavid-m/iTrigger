@@ -41,6 +41,17 @@ func (s *SessionStore) Delete(token string) {
 	delete(s.sessions, token)
 }
 
+func (s *SessionStore) UpdateUsername(oldUsername, newUsername string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for token, u := range s.sessions {
+		if u == oldUsername {
+			s.sessions[token] = newUsername
+		}
+	}
+}
+
 func generateToken() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
