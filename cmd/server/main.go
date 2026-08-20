@@ -15,7 +15,7 @@ func main() {
 
 	secret := os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if secret == "" {
-		log.Fatal("GITHUB_WEBHOOK_SECRET must be set")
+		log.Println("[Warning] GITHUB_WEBHOOK_SECRET environment variable is not set. Automatically falling back to project-specific webhook secrets.")
 	}
 
 	srv := server.New(secret)

@@ -54,11 +54,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h == nil || len(h.secret) == 0 {
-		h.writeError(w, http.StatusInternalServerError, "webhook secret is not configured")
-		return
-	}
-
 	deliveryID := r.Header.Get("X-GitHub-Delivery")
 	eventType := r.Header.Get("X-GitHub-Event")
 	signature := r.Header.Get("X-Hub-Signature-256")
@@ -74,12 +69,58 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifySignature(h.secret, body, signature) {
+	summary := extractSummary(deliveryID, eventType, body)
+
+	// Determine matching projects for signature verification
+	var matchingProjects []models.ProjectConfig
+	if h.projectStore != nil {
+		if eventType == "push" {
+			var payload models.PushPayload
+			if err := json.Unmarshal(body, &payload); err == nil {
+				branch := branchFromRef(payload.Ref)
+				matchingProjects = h.projectStore.FindByRepoAndBranch(summary.RepositoryName, branch)
+			}
+		} else {
+			// For non-push events (like ping, pull_request, etc.), find all projects matching the repository name
+			allProjects := h.projectStore.GetAll()
+			repoClean := strings.ToLower(strings.TrimSpace(summary.RepositoryName))
+			for _, p := range allProjects {
+				if !p.Enabled {
+					continue
+				}
+				pRepo := strings.ToLower(strings.TrimSpace(p.Repository))
+				repoMatch := pRepo == repoClean || strings.HasSuffix(repoClean, "/"+pRepo) || strings.HasSuffix(pRepo, "/"+repoClean)
+				if repoMatch {
+					matchingProjects = append(matchingProjects, p)
+				}
+			}
+		}
+	}
+
+	// Verify signature using matching projects' secrets or system fallback
+	isSignatureVerified := false
+	if len(matchingProjects) > 0 {
+		for _, proj := range matchingProjects {
+			secretToUse := h.secret
+			if proj.Secret != "" {
+				secretToUse = []byte(proj.Secret)
+			}
+			if verifySignature(secretToUse, body, signature) {
+				isSignatureVerified = true
+				break
+			}
+		}
+	} else {
+		// Fallback to system secret if no projects match yet (e.g. initial setup ping before adding project)
+		if len(h.secret) > 0 && verifySignature(h.secret, body, signature) {
+			isSignatureVerified = true
+		}
+	}
+
+	if !isSignatureVerified {
 		h.writeError(w, http.StatusUnauthorized, "invalid webhook signature")
 		return
 	}
-
-	summary := extractSummary(deliveryID, eventType, body)
 
 	switch eventType {
 	case "push":
@@ -98,12 +139,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				payload.HeadCommit.Message,
 			)
 
-			// Trigger automated deployments for matching projects
-			if h.projectStore != nil && h.runner != nil {
-				matching := h.projectStore.FindByRepoAndBranch(summary.RepositoryName, branch)
-				for _, proj := range matching {
-					h.logger.Printf("Auto-deploying matching project id=%s name=%s repo=%s branch=%s", proj.ID, proj.Name, proj.Repository, proj.Branch)
-					h.runner.TriggerDeployment(proj, "webhook:"+summary.Sender, payload.HeadCommit.ID, payload.HeadCommit.Message)
+			// Trigger automated deployments for matching verified projects
+			if h.runner != nil {
+				for _, proj := range matchingProjects {
+					secretToUse := h.secret
+					if proj.Secret != "" {
+						secretToUse = []byte(proj.Secret)
+					}
+					if verifySignature(secretToUse, body, signature) {
+						h.logger.Printf("Auto-deploying matching project id=%s name=%s repo=%s branch=%s", proj.ID, proj.Name, proj.Repository, proj.Branch)
+						h.runner.TriggerDeployment(proj, "webhook:"+summary.Sender, payload.HeadCommit.ID, payload.HeadCommit.Message)
+					}
 				}
 			}
 		}

@@ -53,6 +53,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const scriptTextareaGroup = document.getElementById('scriptTextareaGroup');
   const scriptFileNotice = document.getElementById('scriptFileNotice');
   const projectScript = document.getElementById('projectScript');
+  const projectSecret = document.getElementById('projectSecret');
+  const btnGenerateSecret = document.getElementById('btnGenerateSecret');
 
   const terminalModal = document.getElementById('terminalModal');
   const terminalTitle = document.getElementById('terminalTitle');
@@ -228,6 +230,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnCloseProjectModal) btnCloseProjectModal.addEventListener('click', closeProjectModal);
     if (btnCancelProjectModal) btnCancelProjectModal.addEventListener('click', closeProjectModal);
     if (projectForm) projectForm.addEventListener('submit', saveProject);
+
+    if (btnGenerateSecret) {
+      btnGenerateSecret.addEventListener('click', () => {
+        const array = new Uint8Array(20);
+        window.crypto.getRandomValues(array);
+        const secret = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+        if (projectSecret) {
+          projectSecret.value = secret;
+          showToast('Generated secure random secret!');
+        }
+      });
+    }
 
     if (btnCloseTerminalModal) btnCloseTerminalModal.addEventListener('click', closeTerminalModal);
     if (btnCopyLog) {
@@ -511,6 +525,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="path-code" data-action="copy-path" data-path="${escapeHTML(p.projectPath)}" title="Click to copy path">${escapeHTML(p.projectPath)}</span>
               </div>
 
+              <div class="project-meta-row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <span>Webhook Secret:</span>
+                ${p.secret ? `
+                  <span class="path-code" data-action="copy-path" data-path="${escapeHTML(p.secret)}" title="Click to copy secret">•••••••• (click to copy)</span>
+                ` : `
+                  <span style="color:var(--text-muted); font-style:italic;">None (uses global default)</span>
+                `}
+              </div>
+
               <div class="script-box" style="${hasCustomScript ? '' : 'color:var(--accent-cyan); font-style:italic;'}">
                 ${hasCustomScript ? escapeHTML(p.script) : '⚡ Auto-discovering .itrigger script in repo root'}
               </div>
@@ -698,6 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('projectRepo').value = proj ? proj.repository : '';
     document.getElementById('projectBranch').value = proj ? proj.branch : 'main';
     document.getElementById('projectPath').value = proj ? proj.projectPath : '';
+    if (projectSecret) projectSecret.value = proj ? (proj.secret || '') : '';
     document.getElementById('projectEnabled').checked = proj ? proj.enabled : true;
 
     const hasCustomScript = proj && proj.script && proj.script.trim().length > 0 && !proj.script.startsWith('# Auto-detect');
@@ -731,6 +759,7 @@ document.addEventListener('DOMContentLoaded', () => {
       branch: document.getElementById('projectBranch').value,
       projectPath: document.getElementById('projectPath').value,
       script: scriptValue,
+      secret: projectSecret ? projectSecret.value : '',
       enabled: document.getElementById('projectEnabled').checked
     };
 
