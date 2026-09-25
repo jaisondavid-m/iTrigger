@@ -12,6 +12,11 @@ type ProjectConfig struct {
 	Script         string    `json:"script"`      // Shell commands e.g. "git pull origin main\ndocker compose up --build -d"
 	Secret         string    `json:"secret"`      // Optional per-project webhook secret override
 	Enabled        bool      `json:"enabled"`
+	IsPrivate      bool      `json:"isPrivate"`
+	AuthType       string    `json:"authType"` // "none", "token", "ssh_key", "global"
+	AuthToken      string    `json:"authToken,omitempty"`
+	SSHPrivateKey  string    `json:"sshPrivateKey,omitempty"`
+	SSHPublicKey   string    `json:"sshPublicKey,omitempty"`
 	UserPermission string    `json:"userPermission,omitempty"` // User permission level: "read", "write"
 	CreatedAt      time.Time `json:"createdAt"`
 	UpdatedAt      time.Time `json:"updatedAt"`
@@ -36,11 +41,17 @@ type DeploymentLog struct {
 
 // CreateProjectRequest payload for creating/updating a project.
 type CreateProjectRequest struct {
-	Name        string `json:"name"`
-	Repository  string `json:"repository"`
-	Branch      string `json:"branch"`
-	ProjectPath string `json:"projectPath"`
-	Script      string `json:"script"`
-	Secret      string `json:"secret"`
-	Enabled     bool   `json:"enabled"`
+	Name          string `json:"name"`
+	Repository    string `json:"repository"`
+	Branch        string `json:"branch"`
+	ProjectPath   string `json:"projectPath"`
+	Script        string `json:"script"`
+	Secret        string `json:"secret"`
+	Enabled       bool   `json:"enabled"`
+	IsPrivate     bool   `json:"isPrivate"`
+	AuthType      string `json:"authType"`
+	AuthToken     string `json:"authToken"`
+	SSHPrivateKey string `json:"sshPrivateKey"`
+	SSHPublicKey  string `json:"sshPublicKey"`
 }
+

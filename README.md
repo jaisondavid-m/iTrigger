@@ -103,8 +103,32 @@ Administrators can configure granular access controls for other users in the **U
    - **Deployment Execution Mode:**
      - *Auto-detect `.itrigger`:* Resolves and executes a `.itrigger`, `.itrigger.sh`, or `itrigger.sh` script in the root of the pulled repository on the server.
      - *Custom Script:* Select this to type or paste shell commands directly into the textarea (e.g., `git pull origin main && docker compose up -d --build`).
+   - **Private Repository (Optional):**
+     - Toggle on **Private Repository** if your GitHub repository requires authentication.
+     - Select your preferred authentication mode:
+       - **Personal Token (PAT):** Paste your GitHub Personal Access Token (requires `repo` or fine-grained `contents:read` scope).
+       - **SSH Deploy Key:** Click **⚡ Generate Key Pair**, then copy the generated **SSH Public Key** and add it to GitHub (**Settings > Deploy Keys**). iTrigger manages the private key securely and automatically injects `GIT_SSH_COMMAND`.
+       - **Global Server Token:** Uses the system `GITHUB_TOKEN` environment variable.
    - **Enable Auto-Deploy:** Toggle on to allow incoming GitHub webhooks to run this configuration automatically.
 4. Click **Save Project**.
+
+---
+
+## 🔒 Private Repository Support & Authentication
+
+iTrigger supports deploying both public and private repositories seamlessly without hardcoding secrets into your deployment scripts:
+
+### 1. Personal Access Token (PAT)
+- Generate a Fine-Grained or Classic Personal Access Token on GitHub with `repo` or `contents:read` permissions.
+- In the project modal, toggle **Private Repository**, choose **Personal Token (PAT)**, and enter your token.
+- iTrigger automatically injects authenticated Git HTTP headers into the environment during execution and redacts the token from all console output logs.
+
+### 2. SSH Deploy Keys (Recommended for Per-Project Security)
+- In the project modal, toggle **Private Repository** and select **SSH Deploy Key**.
+- Click **⚡ Generate Key Pair** to generate an Ed25519 key pair with one click.
+- Click **Copy** on the generated Public Key.
+- In your private GitHub repository, go to **Settings > Deploy Keys > Add deploy key**, paste the public key, and leave write access unchecked (read-only is sufficient for deployments).
+- Click **Save Project**. iTrigger handles the private key in memory and secure temporary files, automatically authenticating all Git clone and pull operations.
 
 ---
 

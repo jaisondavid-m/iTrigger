@@ -26,7 +26,8 @@ func (ps *ProjectStore) GetAll() []models.ProjectConfig {
 	defer ps.mu.RUnlock()
 
 	rows, err := ps.db.Query(`
-		SELECT id, name, repository, branch, project_path, script, secret, enabled, created_at, updated_at
+		SELECT id, name, repository, branch, project_path, script, secret, enabled,
+		       is_private, auth_type, auth_token, ssh_private_key, ssh_public_key, created_at, updated_at
 		FROM projects
 		ORDER BY created_at DESC
 	`)
@@ -38,9 +39,13 @@ func (ps *ProjectStore) GetAll() []models.ProjectConfig {
 	var projects []models.ProjectConfig
 	for rows.Next() {
 		var p models.ProjectConfig
-		var enabledInt int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Repository, &p.Branch, &p.ProjectPath, &p.Script, &p.Secret, &enabledInt, &p.CreatedAt, &p.UpdatedAt); err == nil {
+		var enabledInt, isPrivateInt int
+		if err := rows.Scan(
+			&p.ID, &p.Name, &p.Repository, &p.Branch, &p.ProjectPath, &p.Script, &p.Secret, &enabledInt,
+			&isPrivateInt, &p.AuthType, &p.AuthToken, &p.SSHPrivateKey, &p.SSHPublicKey, &p.CreatedAt, &p.UpdatedAt,
+		); err == nil {
 			p.Enabled = (enabledInt == 1)
+			p.IsPrivate = (isPrivateInt == 1)
 			projects = append(projects, p)
 		}
 	}
@@ -82,6 +87,26 @@ func (ps *ProjectStore) Save(req models.CreateProjectRequest, existingID string)
 	p.Script = req.Script
 	p.Secret = strings.TrimSpace(req.Secret)
 	p.Enabled = req.Enabled
+	p.IsPrivate = req.IsPrivate
+	p.AuthType = strings.TrimSpace(req.AuthType)
+	if p.AuthType == "" {
+		if p.IsPrivate {
+			p.AuthType = "token"
+		} else {
+			p.AuthType = "none"
+		}
+	}
+
+	// Preserve existing credentials if empty or masked on edit
+	if (req.AuthToken != "" && req.AuthToken != "••••••••") || existingID == "" {
+		p.AuthToken = strings.TrimSpace(req.AuthToken)
+	}
+	if (req.SSHPrivateKey != "" && req.SSHPrivateKey != "[CONFIGURED]") || existingID == "" {
+		p.SSHPrivateKey = strings.TrimSpace(req.SSHPrivateKey)
+	}
+	if req.SSHPublicKey != "" || existingID == "" {
+		p.SSHPublicKey = strings.TrimSpace(req.SSHPublicKey)
+	}
 
 	if p.Branch == "" {
 		p.Branch = "main"
@@ -92,10 +117,19 @@ func (ps *ProjectStore) Save(req models.CreateProjectRequest, existingID string)
 		enabledInt = 1
 	}
 
+	isPrivateInt := 0
+	if p.IsPrivate {
+		isPrivateInt = 1
+	}
+
 	_, err := ps.db.Exec(`
-		INSERT OR REPLACE INTO projects (id, name, repository, branch, project_path, script, secret, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, p.ID, p.Name, p.Repository, p.Branch, p.ProjectPath, p.Script, p.Secret, enabledInt, p.CreatedAt, p.UpdatedAt)
+		INSERT OR REPLACE INTO projects (
+			id, name, repository, branch, project_path, script, secret, enabled,
+			is_private, auth_type, auth_token, ssh_private_key, ssh_public_key, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, p.ID, p.Name, p.Repository, p.Branch, p.ProjectPath, p.Script, p.Secret, enabledInt,
+		isPrivateInt, p.AuthType, p.AuthToken, p.SSHPrivateKey, p.SSHPublicKey, p.CreatedAt, p.UpdatedAt)
 
 	if err != nil {
 		return models.ProjectConfig{}, fmt.Errorf("failed to save project to db: %w", err)
@@ -106,19 +140,25 @@ func (ps *ProjectStore) Save(req models.CreateProjectRequest, existingID string)
 
 func (ps *ProjectStore) getLocked(id string) (models.ProjectConfig, bool) {
 	var p models.ProjectConfig
-	var enabledInt int
+	var enabledInt, isPrivateInt int
 	err := ps.db.QueryRow(`
-		SELECT id, name, repository, branch, project_path, script, secret, enabled, created_at, updated_at
+		SELECT id, name, repository, branch, project_path, script, secret, enabled,
+		       is_private, auth_type, auth_token, ssh_private_key, ssh_public_key, created_at, updated_at
 		FROM projects WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.Repository, &p.Branch, &p.ProjectPath, &p.Script, &p.Secret, &enabledInt, &p.CreatedAt, &p.UpdatedAt)
+	`, id).Scan(
+		&p.ID, &p.Name, &p.Repository, &p.Branch, &p.ProjectPath, &p.Script, &p.Secret, &enabledInt,
+		&isPrivateInt, &p.AuthType, &p.AuthToken, &p.SSHPrivateKey, &p.SSHPublicKey, &p.CreatedAt, &p.UpdatedAt,
+	)
 
 	if err != nil {
 		return models.ProjectConfig{}, false
 	}
 
 	p.Enabled = (enabledInt == 1)
+	p.IsPrivate = (isPrivateInt == 1)
 	return p, true
 }
+
 
 func (ps *ProjectStore) Delete(id string) bool {
 	ps.mu.Lock()

@@ -446,6 +446,70 @@
           </div>
         </div>
 
+        <!-- Private Repository Switch & Credentials -->
+        <div class="form-group checkbox-group" style="margin-top: -0.25rem; margin-bottom: 0.75rem;">
+          <label class="switch">
+            <input type="checkbox" id="projectIsPrivate">
+            <span class="slider round"></span>
+          </label>
+          <span class="checkbox-label" style="font-weight:600; display:flex; align-items:center; gap:0.4rem;">
+            <span>Private Repository</span>
+            <span style="font-size:0.75rem; font-weight:normal; color:var(--text-muted);">(Requires Git credentials to clone/pull)</span>
+          </span>
+        </div>
+
+        <div id="privateRepoAuthBlock" class="private-auth-box hidden" style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:0.9rem; margin-bottom:1rem;">
+          <label style="font-size:0.82rem; font-weight:600; color:var(--text-secondary); margin-bottom:0.5rem; display:block;">Authentication Method</label>
+          <div class="auth-type-selector" style="display:flex; gap:0.5rem; margin-bottom:0.75rem; flex-wrap:wrap;">
+            <label class="auth-type-pill" style="flex:1; min-width:130px; cursor:pointer; display:flex; align-items:center; gap:0.4rem; padding:0.45rem 0.65rem; border-radius:6px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.02); font-size:0.8rem;">
+              <input type="radio" name="projectAuthType" value="token" checked>
+              <span>Personal Token (PAT)</span>
+            </label>
+            <label class="auth-type-pill" style="flex:1; min-width:130px; cursor:pointer; display:flex; align-items:center; gap:0.4rem; padding:0.45rem 0.65rem; border-radius:6px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.02); font-size:0.8rem;">
+              <input type="radio" name="projectAuthType" value="ssh_key">
+              <span>SSH Deploy Key</span>
+            </label>
+            <label class="auth-type-pill" style="flex:1; min-width:130px; cursor:pointer; display:flex; align-items:center; gap:0.4rem; padding:0.45rem 0.65rem; border-radius:6px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.02); font-size:0.8rem;">
+              <input type="radio" name="projectAuthType" value="global">
+              <span>Global Server Token</span>
+            </label>
+          </div>
+
+          <!-- Token Input -->
+          <div id="authTypeTokenGroup" class="form-group" style="margin-bottom:0.25rem;">
+            <label for="projectAuthToken">Personal Access Token</label>
+            <input type="password" id="projectAuthToken" class="form-input" placeholder="ghp_... or github_pat_..." autocomplete="new-password">
+            <small class="form-help">Requires <code>repo</code> or fine-grained <code>contents:read</code> scope on GitHub.</small>
+          </div>
+
+          <!-- SSH Key Inputs -->
+          <div id="authTypeSSHGroup" class="form-group hidden" style="margin-bottom:0.25rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+              <label for="projectSSHPublicKey" style="margin-bottom:0;">SSH Public Key (Deploy Key)</label>
+              <button type="button" id="btnGenerateSSHKey" class="btn btn-xs btn-secondary" title="Generate an Ed25519 SSH Key Pair">
+                ⚡ Generate Key Pair
+              </button>
+            </div>
+            <div class="input-with-button" style="margin-bottom:0.4rem;">
+              <textarea id="projectSSHPublicKey" class="form-textarea" rows="2" placeholder="ssh-ed25519 AAAA... itrigger-deploy-key" readonly style="font-family:var(--font-mono); font-size:0.75rem;"></textarea>
+              <button type="button" id="btnCopySSHPublicKey" class="btn btn-secondary btn-browse" title="Copy public key to clipboard">
+                <span>Copy</span>
+              </button>
+            </div>
+            <small class="form-help" style="margin-bottom:0.5rem; display:block;">Add this key to GitHub: <b>Repository &gt; Settings &gt; Deploy Keys &gt; Add deploy key</b>.</small>
+
+            <label for="projectSSHPrivateKey">SSH Private Key</label>
+            <textarea id="projectSSHPrivateKey" class="form-textarea" rows="3" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..." autocomplete="off" style="font-family:var(--font-mono); font-size:0.75rem;"></textarea>
+          </div>
+
+          <!-- Global Token Note -->
+          <div id="authTypeGlobalGroup" class="form-group hidden" style="margin-bottom:0.25rem;">
+            <div style="color:var(--text-secondary); font-size:0.8rem; padding:0.6rem; background:rgba(99,102,241,0.1); border-radius:6px; border:1px solid rgba(99,102,241,0.2);">
+              ℹ️ Automatically authenticates using the global <code>GITHUB_TOKEN</code> environment variable on the server.
+            </div>
+          </div>
+        </div>
+
         <div class="form-group">
           <label for="projectPath">Server Directory Path <span class="req">*</span></label>
           <div class="input-with-button">

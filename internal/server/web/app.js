@@ -72,6 +72,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const projectSecret = document.getElementById('projectSecret');
   const btnGenerateSecret = document.getElementById('btnGenerateSecret');
 
+  // Private Repository Elements
+  const projectIsPrivate = document.getElementById('projectIsPrivate');
+  const privateRepoAuthBlock = document.getElementById('privateRepoAuthBlock');
+  const authTypeTokenGroup = document.getElementById('authTypeTokenGroup');
+  const authTypeSSHGroup = document.getElementById('authTypeSSHGroup');
+  const authTypeGlobalGroup = document.getElementById('authTypeGlobalGroup');
+  const projectAuthToken = document.getElementById('projectAuthToken');
+  const projectSSHPublicKey = document.getElementById('projectSSHPublicKey');
+  const projectSSHPrivateKey = document.getElementById('projectSSHPrivateKey');
+  const btnGenerateSSHKey = document.getElementById('btnGenerateSSHKey');
+  const btnCopySSHPublicKey = document.getElementById('btnCopySSHPublicKey');
+
   const terminalModal = document.getElementById('terminalModal');
   const terminalTitle = document.getElementById('terminalTitle');
   const terminalContent = document.getElementById('terminalContent');
@@ -289,11 +301,72 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function setAuthType(type) {
+    const radios = document.querySelectorAll('input[name="projectAuthType"]');
+    radios.forEach(r => {
+      r.checked = (r.value === type);
+    });
+    if (authTypeTokenGroup) authTypeTokenGroup.classList.toggle('hidden', type !== 'token');
+    if (authTypeSSHGroup) authTypeSSHGroup.classList.toggle('hidden', type !== 'ssh_key');
+    if (authTypeGlobalGroup) authTypeGlobalGroup.classList.toggle('hidden', type !== 'global');
+  }
+
   function setupEventListeners() {
     // 0. Script Mode Segmented Buttons
     if (btnScriptModeFile && btnScriptModeCustom) {
       btnScriptModeFile.addEventListener('click', () => setScriptMode('file'));
       btnScriptModeCustom.addEventListener('click', () => setScriptMode('custom'));
+    }
+
+    // 0.1 Private Repo Toggle & Auth Handlers
+    if (projectIsPrivate) {
+      projectIsPrivate.addEventListener('change', () => {
+        if (privateRepoAuthBlock) {
+          privateRepoAuthBlock.classList.toggle('hidden', !projectIsPrivate.checked);
+        }
+      });
+    }
+
+    const authTypeRadios = document.querySelectorAll('input[name="projectAuthType"]');
+    authTypeRadios.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        setAuthType(e.target.value);
+      });
+    });
+
+    if (btnGenerateSSHKey) {
+      btnGenerateSSHKey.addEventListener('click', async () => {
+        const origText = btnGenerateSSHKey.innerHTML;
+        btnGenerateSSHKey.disabled = true;
+        btnGenerateSSHKey.innerHTML = 'Generating...';
+        try {
+          const res = await fetch('/api/keys/generate', { method: 'POST' });
+          if (!res.ok) throw new Error('Failed to generate SSH key pair');
+          const data = await res.json();
+          if (projectSSHPublicKey) projectSSHPublicKey.value = data.publicKey;
+          if (projectSSHPrivateKey) projectSSHPrivateKey.value = data.privateKey;
+          showToast('SSH Key pair generated! Add public key to GitHub Deploy Keys.');
+        } catch (err) {
+          showToast(err.message, true);
+        } finally {
+          btnGenerateSSHKey.disabled = false;
+          btnGenerateSSHKey.innerHTML = origText;
+        }
+      });
+    }
+
+    if (btnCopySSHPublicKey) {
+      btnCopySSHPublicKey.addEventListener('click', () => {
+        if (projectSSHPublicKey && projectSSHPublicKey.value) {
+          navigator.clipboard.writeText(projectSSHPublicKey.value).then(() => {
+            showToast('SSH Public Key copied to clipboard!');
+          }).catch(() => {
+            showToast('Failed to copy to clipboard', true);
+          });
+        } else {
+          showToast('No public key to copy. Generate one first.', true);
+        }
+      });
     }
 
     // 1. Sidebar Page Switching
@@ -806,7 +879,8 @@ document.addEventListener('DOMContentLoaded', () => {
                   ${escapeHTML(p.repository)}
                 </span>
               </div>
-              <div style="display: flex; gap: 0.4rem; align-items: center;">
+              <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">
+                ${p.isPrivate ? `<span class="badge" style="background:rgba(168,85,247,0.15); color:#c084fc; border:1px solid rgba(168,85,247,0.3)">🔒 Private</span>` : ''}
                 <span class="badge ${p.enabled ? 'badge-status-success' : 'badge-status-failed'}">
                   ${p.enabled ? 'Enabled' : 'Disabled'}
                 </span>
@@ -815,6 +889,17 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
             <div class="project-details">
+              ${p.isPrivate ? `
+              <div class="project-meta-row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                <span>Git Auth:</span>
+                <span class="branch-badge" style="background:rgba(168,85,247,0.2); color:#e9d5ff;">${p.authType === 'ssh_key' ? 'SSH Deploy Key' : (p.authType === 'global' ? 'Global Token' : 'Personal Token')}</span>
+              </div>
+              ` : ''}
+
               <div class="project-meta-row">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="6" y1="3" x2="6" y2="15"></line>
@@ -1069,6 +1154,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (projectSecret) projectSecret.value = proj ? (proj.secret || '') : '';
     document.getElementById('projectEnabled').checked = proj ? proj.enabled : true;
 
+    // Private Repository Fields
+    const isPrivate = proj ? !!proj.isPrivate : false;
+    const authType = proj && proj.authType ? proj.authType : (isPrivate ? 'token' : 'token');
+    if (projectIsPrivate) projectIsPrivate.checked = isPrivate;
+    if (privateRepoAuthBlock) privateRepoAuthBlock.classList.toggle('hidden', !isPrivate);
+    setAuthType(authType === 'none' ? 'token' : authType);
+    if (projectAuthToken) projectAuthToken.value = proj ? (proj.authToken || '') : '';
+    if (projectSSHPublicKey) projectSSHPublicKey.value = proj ? (proj.sshPublicKey || '') : '';
+    if (projectSSHPrivateKey) projectSSHPrivateKey.value = proj ? (proj.sshPrivateKey || '') : '';
+
     const hasCustomScript = proj && proj.script && proj.script.trim().length > 0 && !proj.script.startsWith('# Auto-detect');
     if (hasCustomScript) {
       setScriptMode('custom');
@@ -1087,12 +1182,19 @@ document.addEventListener('DOMContentLoaded', () => {
       projectSecret,
       projectScript,
       document.getElementById('projectEnabled'),
-      document.getElementById('btnBrowsePath')
+      document.getElementById('btnBrowsePath'),
+      projectIsPrivate,
+      projectAuthToken,
+      projectSSHPrivateKey,
+      btnGenerateSSHKey
     ];
 
     inputs.forEach(input => {
       if (input) input.disabled = isReadOnly;
     });
+
+    const authRadios = document.querySelectorAll('input[name="projectAuthType"]');
+    authRadios.forEach(r => r.disabled = isReadOnly);
 
     if (btnScriptModeFile) btnScriptModeFile.disabled = isReadOnly;
     if (btnScriptModeCustom) btnScriptModeCustom.disabled = isReadOnly;
@@ -1116,6 +1218,12 @@ document.addEventListener('DOMContentLoaded', () => {
   function closeProjectModal() {
     if (projectModal) projectModal.classList.add('hidden');
     if (projectForm) projectForm.reset();
+    if (projectIsPrivate) projectIsPrivate.checked = false;
+    if (privateRepoAuthBlock) privateRepoAuthBlock.classList.add('hidden');
+    setAuthType('token');
+    if (projectAuthToken) projectAuthToken.value = '';
+    if (projectSSHPublicKey) projectSSHPublicKey.value = '';
+    if (projectSSHPrivateKey) projectSSHPrivateKey.value = '';
     setScriptMode('file');
   }
 
@@ -1125,6 +1233,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const isCustomMode = btnScriptModeCustom && btnScriptModeCustom.classList.contains('active');
     const scriptValue = isCustomMode ? (projectScript ? projectScript.value : '') : '';
 
+    const isPrivate = projectIsPrivate ? projectIsPrivate.checked : false;
+    const selectedAuthRadio = document.querySelector('input[name="projectAuthType"]:checked');
+    const authType = isPrivate ? (selectedAuthRadio ? selectedAuthRadio.value : 'token') : 'none';
+
     const body = {
       name: document.getElementById('projectName').value,
       repository: document.getElementById('projectRepo').value,
@@ -1132,7 +1244,12 @@ document.addEventListener('DOMContentLoaded', () => {
       projectPath: document.getElementById('projectPath').value,
       script: scriptValue,
       secret: projectSecret ? projectSecret.value : '',
-      enabled: document.getElementById('projectEnabled').checked
+      enabled: document.getElementById('projectEnabled').checked,
+      isPrivate: isPrivate,
+      authType: authType,
+      authToken: projectAuthToken ? projectAuthToken.value : '',
+      sshPrivateKey: projectSSHPrivateKey ? projectSSHPrivateKey.value : '',
+      sshPublicKey: projectSSHPublicKey ? projectSSHPublicKey.value : ''
     };
 
     const saveBtn = document.getElementById('btnSaveProject');

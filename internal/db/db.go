@@ -44,6 +44,11 @@ func InitDB(dbPath string) (*sql.DB, error) {
 	// Schema migration for existing databases: add columns if they do not exist
 	_, _ = db.Exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
 	_, _ = db.Exec("ALTER TABLE users ADD COLUMN can_create_project INTEGER NOT NULL DEFAULT 1")
+	_, _ = db.Exec("ALTER TABLE projects ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0")
+	_, _ = db.Exec("ALTER TABLE projects ADD COLUMN auth_type TEXT NOT NULL DEFAULT 'none'")
+	_, _ = db.Exec("ALTER TABLE projects ADD COLUMN auth_token TEXT NOT NULL DEFAULT ''")
+	_, _ = db.Exec("ALTER TABLE projects ADD COLUMN ssh_private_key TEXT NOT NULL DEFAULT ''")
+	_, _ = db.Exec("ALTER TABLE projects ADD COLUMN ssh_public_key TEXT NOT NULL DEFAULT ''")
 
 	// Initialize default user if users table is empty
 	var count int
@@ -91,6 +96,11 @@ func createTables(db *sql.DB) error {
 		script TEXT NOT NULL DEFAULT '',
 		secret TEXT NOT NULL DEFAULT '',
 		enabled INTEGER NOT NULL DEFAULT 1,
+		is_private INTEGER NOT NULL DEFAULT 0,
+		auth_type TEXT NOT NULL DEFAULT 'none',
+		auth_token TEXT NOT NULL DEFAULT '',
+		ssh_private_key TEXT NOT NULL DEFAULT '',
+		ssh_public_key TEXT NOT NULL DEFAULT '',
 		created_at DATETIME NOT NULL,
 		updated_at DATETIME NOT NULL
 	);

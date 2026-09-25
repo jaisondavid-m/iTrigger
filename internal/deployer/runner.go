@@ -3,6 +3,7 @@ package deployer
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -80,19 +81,17 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 	var logBuf bytes.Buffer
 	logBuf.WriteString(depLog.Log)
 
-	// 1. Verify project path exists
+	// Sensitive strings to redact from logs
+	var secretsToRedact []string
+
+	// 1. Verify and prepare project path
 	cleanPath := strings.TrimSpace(project.ProjectPath)
 	if cleanPath == "" {
 		cleanPath = "."
 	}
 
-	// Automatically run git safe.directory for the specific project path & wildcard
-	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", cleanPath).Run()
-	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", "*").Run()
-
-	fi, err := os.Stat(cleanPath)
-	if err != nil || !fi.IsDir() {
-		logBuf.WriteString(fmt.Sprintf("\n[ERROR] Project directory does not exist or is invalid: %s\n", cleanPath))
+	if err := os.MkdirAll(cleanPath, 0755); err != nil {
+		logBuf.WriteString(fmt.Sprintf("\n[ERROR] Could not create or access project directory: %s (%v)\n", cleanPath, err))
 		depLog.Status = "FAILED"
 		depLog.CompletedAt = time.Now()
 		depLog.DurationMs = time.Since(startTime).Milliseconds()
@@ -101,7 +100,95 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 		return
 	}
 
-	// 2. Resolve deployment script (Check target repository for .itrigger, .itrigger.sh, itrigger.sh, or fallback to UI script)
+	// Automatically run git safe.directory for the specific project path & wildcard
+	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", cleanPath).Run()
+	_ = exec.Command("git", "config", "--global", "--add", "safe.directory", "*").Run()
+
+	// 2. Prepare Git credentials and environment
+	env := os.Environ()
+	env = append(env,
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=safe.directory",
+		"GIT_CONFIG_VALUE_0=*",
+	)
+
+	var tempKeyFile string
+	authType := strings.ToLower(strings.TrimSpace(project.AuthType))
+	if authType == "" && project.IsPrivate {
+		authType = "token"
+	}
+
+	// Resolve token if token or global auth is used
+	token := strings.TrimSpace(project.AuthToken)
+	if token == "" && (authType == "global" || (project.IsPrivate && authType == "token")) {
+		token = strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	}
+
+	if token != "" {
+		secretsToRedact = append(secretsToRedact, token)
+		authHeaderVal := fmt.Sprintf("AUTHORIZATION: basic %s", base64.StdEncoding.EncodeToString([]byte("x-access-token:"+token)))
+		env = append(env,
+			"GITHUB_TOKEN="+token,
+			"GIT_CONFIG_COUNT=3",
+			"GIT_CONFIG_KEY_1=http.extraheader",
+			"GIT_CONFIG_VALUE_1="+authHeaderVal,
+			"GIT_CONFIG_KEY_2=credential.helper",
+			"GIT_CONFIG_VALUE_2=",
+		)
+	}
+
+	// Resolve SSH key if SSH auth is used
+	if authType == "ssh_key" && strings.TrimSpace(project.SSHPrivateKey) != "" {
+		privKey := strings.TrimSpace(project.SSHPrivateKey)
+		secretsToRedact = append(secretsToRedact, privKey)
+
+		keysDir := filepath.Join("data", "keys")
+		_ = os.MkdirAll(keysDir, 0700)
+		tempKeyFile = filepath.Join(keysDir, fmt.Sprintf("id_%s.key", depLog.ID))
+		if err := os.WriteFile(tempKeyFile, []byte(privKey+"\n"), 0600); err == nil {
+			defer func() {
+				_ = os.Remove(tempKeyFile)
+			}()
+			sshCmd := fmt.Sprintf("ssh -i %q -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes", tempKeyFile)
+			env = append(env, "GIT_SSH_COMMAND="+sshCmd)
+		} else {
+			logBuf.WriteString(fmt.Sprintf("\n[WARNING] Failed to write temporary SSH key file: %v\n", err))
+		}
+	}
+
+	// 3. Auto-clone if target directory is empty
+	entries, readErr := os.ReadDir(cleanPath)
+	if readErr == nil && len(entries) == 0 && strings.TrimSpace(project.Repository) != "" {
+		repoURL := strings.TrimSpace(project.Repository)
+		if !strings.HasPrefix(repoURL, "http://") && !strings.HasPrefix(repoURL, "https://") && !strings.HasPrefix(repoURL, "git@") {
+			if authType == "ssh_key" {
+				repoURL = fmt.Sprintf("git@github.com:%s.git", strings.TrimSuffix(repoURL, ".git"))
+			} else {
+				repoURL = fmt.Sprintf("https://github.com/%s.git", strings.TrimSuffix(repoURL, ".git"))
+			}
+		}
+
+		branchName := strings.TrimSpace(project.Branch)
+		if branchName == "" {
+			branchName = "main"
+		}
+
+		logBuf.WriteString(fmt.Sprintf("Directory is empty. Performing initial clone from %s (branch: %s)...\n", repoURL, branchName))
+		cloneCmd := exec.Command("git", "clone", "--branch", branchName, repoURL, ".")
+		cloneCmd.Dir = cleanPath
+		cloneCmd.Env = env
+		var cloneBuf bytes.Buffer
+		cloneCmd.Stdout = &cloneBuf
+		cloneCmd.Stderr = &cloneBuf
+		if cloneErr := cloneCmd.Run(); cloneErr != nil {
+			logBuf.WriteString(fmt.Sprintf("[ERROR] Initial git clone failed: %v\n%s\n", cloneErr, cloneBuf.String()))
+		} else {
+			logBuf.WriteString("--> Repository cloned successfully.\n\n")
+		}
+	}
+
+	// 4. Resolve deployment script (Check target repository for .itrigger, .itrigger.sh, itrigger.sh, or fallback to UI script)
 	scriptSource := "UI script"
 	script := strings.TrimSpace(project.Script)
 
@@ -145,14 +232,6 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 	}
 
 	cmd.Dir = cleanPath
-
-	// Inherit environment variables & bypass Git safe directory restriction automatically
-	env := os.Environ()
-	env = append(env,
-		"GIT_CONFIG_COUNT=1",
-		"GIT_CONFIG_KEY_0=safe.directory",
-		"GIT_CONFIG_VALUE_0=*",
-	)
 	cmd.Env = env
 
 	var outputBuf bytes.Buffer
@@ -170,8 +249,16 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 		r.mu.Unlock()
 	}()
 
-	err = cmd.Run()
-	logBuf.Write(outputBuf.Bytes())
+	err := cmd.Run()
+	outputStr := outputBuf.String()
+
+	// Redact sensitive secrets from log output
+	for _, secret := range secretsToRedact {
+		if secret != "" && len(secret) > 3 {
+			outputStr = strings.ReplaceAll(outputStr, secret, "[REDACTED_SECRET]")
+		}
+	}
+	logBuf.WriteString(outputStr)
 
 	// If manual stop set it to STOPPED, do not overwrite it here
 	if current, ok := r.deploymentStore.Get(depLog.ID); ok && current.Status == "STOPPED" {
@@ -194,6 +281,7 @@ func (r *Runner) execute(depLog models.DeploymentLog, project models.ProjectConf
 	depLog.Log = logBuf.String()
 	r.deploymentStore.Update(depLog)
 }
+
 
 func (r *Runner) StopDeployment(depID string) error {
 	r.mu.Lock()

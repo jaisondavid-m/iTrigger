@@ -15,6 +15,7 @@ import (
 
 	"iTrigger/internal/auth"
 	"iTrigger/internal/backup"
+	"iTrigger/internal/crypto"
 	"iTrigger/internal/db"
 	"iTrigger/internal/deployer"
 	"iTrigger/internal/models"
@@ -240,6 +241,24 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 		})
 	}))
 
+	// SSH Key Generation endpoint
+	mux.HandleFunc("/api/keys/generate", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		keyPair, err := crypto.GenerateSSHKeyPair("itrigger-deploy-key")
+		if err != nil {
+			http.Error(w, "failed to generate key pair: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":     "success",
+			"publicKey":  keyPair.PublicKey,
+			"privateKey": keyPair.PrivateKey,
+		})
+	}))
+
 	// Project Management API endpoints
 	mux.HandleFunc("/api/projects", RequireAuth(sessionStore, func(w http.ResponseWriter, r *http.Request) {
 		username, _ := getUsername(r, sessionStore)
@@ -254,6 +273,12 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			if isAdmin == 1 {
 				for _, p := range projects {
 					p.UserPermission = "write"
+					if p.AuthToken != "" {
+						p.AuthToken = "••••••••"
+					}
+					if p.SSHPrivateKey != "" {
+						p.SSHPrivateKey = "[CONFIGURED]"
+					}
 					filtered = append(filtered, p)
 				}
 			} else {
@@ -275,6 +300,12 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				for _, p := range projects {
 					if perm, exists := userPerms[p.ID]; exists {
 						p.UserPermission = perm
+						if p.AuthToken != "" {
+							p.AuthToken = "••••••••"
+						}
+						if p.SSHPrivateKey != "" {
+							p.SSHPrivateKey = "[CONFIGURED]"
+						}
 						filtered = append(filtered, p)
 					}
 				}
@@ -306,6 +337,13 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 			// Non-admin creators get delete permission by default
 			if isAdmin != 1 {
 				_, _ = database.Exec("INSERT OR REPLACE INTO user_project_permissions (username, project_id, permission) VALUES (?, ?, 'delete')", username, proj.ID)
+			}
+
+			if proj.AuthToken != "" {
+				proj.AuthToken = "••••••••"
+			}
+			if proj.SSHPrivateKey != "" {
+				proj.SSHPrivateKey = "[CONFIGURED]"
 			}
 
 			writeJSON(w, http.StatusCreated, map[string]any{
@@ -382,6 +420,12 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				}
 			}
 			proj.UserPermission = userPerm
+			if proj.AuthToken != "" {
+				proj.AuthToken = "••••••••"
+			}
+			if proj.SSHPrivateKey != "" {
+				proj.SSHPrivateKey = "[CONFIGURED]"
+			}
 
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status":  "success",
@@ -408,6 +452,14 @@ func Register(mux *http.ServeMux, secret string, webFS fs.FS) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+
+			if proj.AuthToken != "" {
+				proj.AuthToken = "••••••••"
+			}
+			if proj.SSHPrivateKey != "" {
+				proj.SSHPrivateKey = "[CONFIGURED]"
+			}
+
 			writeJSON(w, http.StatusOK, map[string]any{
 				"status":  "success",
 				"project": proj,
