@@ -6,7 +6,7 @@ services:
       network: host
     container_name: itrigger-server
     expose:
-      - "8080"
+      - "8090"
     ports:
       - "8090:8090"
     env_file:
